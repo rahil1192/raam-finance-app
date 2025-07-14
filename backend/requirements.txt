@@ -25,3 +25,5 @@ pytesseract
 opencv-python 
 
 scikit-learn 
+
+layoutparser 
