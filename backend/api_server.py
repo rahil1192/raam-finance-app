@@ -474,6 +474,21 @@ async def exchange_public_token(request: Request, db: Session = Depends(get_db))
         access_token = exchange_response["access_token"]
         item_id = exchange_response["item_id"]
 
+        # Ensure PlaidItem exists before inserting accounts
+        plaid_item = db.query(PlaidItem).filter_by(item_id=item_id).first()
+        if not plaid_item:
+            plaid_item = PlaidItem(
+                access_token=access_token,
+                item_id=item_id,
+                institution_id=None,  # You can update this with real data if available
+                institution_name=None,
+                last_refresh=datetime.datetime.utcnow(),
+                status="good",
+                needs_update=False
+            )
+            db.add(plaid_item)
+            db.commit()
+
         # Fetch transactions (last 90 days) with retry logic for PRODUCT_NOT_READY
         start_date = (datetime.datetime.now() - datetime.timedelta(days=90)).date()
         end_date = datetime.datetime.now().date()

@@ -51,7 +51,11 @@ if not DATABASE_URL:
 
 logger.info(f"Using database: {DATABASE_URL}")
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,   # Add this to check connection before using
+    pool_recycle=300      # Recycle connections every 5 minutes
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
