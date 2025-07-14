@@ -97,6 +97,7 @@ Base = getattr(__import__('models'), 'Base', None) or declarative_base()
 # Helper to check if a transaction matches a recurring rule
 from sqlalchemy.orm import Session as OrmSession
 from recurring_utils import is_recurring_by_rule
+from main import normalize_category
 
 # API endpoints for recurring rules
 
