@@ -21,3 +21,5 @@ PyMuPDF==1.23.8
 pdf2image 
 
 pytesseract 
+
+opencv-python 
