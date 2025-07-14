@@ -14,4 +14,5 @@ python-dotenv==1.0.0
 apscheduler==3.10.4
 plaid-python==17.0.0
 gunicorn==21.2.0
-psycopg2-binary==2.9.9 
+psycopg2-binary==2.9.9
+PyYAML==6.0.1 
