@@ -37,6 +37,11 @@ CONFIG = load_config()
 
 # Database configuration for Render
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Clean up DATABASE_URL - remove any extra quotes that might be present
+if DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.strip().strip("'").strip('"')
+
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
