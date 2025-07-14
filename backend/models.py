@@ -213,81 +213,9 @@ def init_db():
             # First time initialization
             Base.metadata.create_all(bind=engine)
             logger.info("Created new database tables")
-
-            # Add some default vendor mappings
-            db = SessionLocal()
-            try:
-                default_mappings = {
-                    "groceries": "Groceries",
-                    "restaurant": "Dining",
-                    "gas": "Transportation",
-                    "uber": "Transportation",
-                    "lyft": "Transportation",
-                    "amazon": "Shopping",
-                    "walmart": "Shopping",
-                    "target": "Shopping",
-                    "netflix": "Entertainment",
-                    "spotify": "Entertainment",
-                    "hulu": "Entertainment",
-                    "disney": "Entertainment",
-                    "rent": "Housing",
-                    "mortgage": "Housing",
-                    "utilities": "Utilities",
-                    "electric": "Utilities",
-                    "water": "Utilities",
-                    "gas": "Utilities",
-                    "internet": "Utilities",
-                    "phone": "Utilities",
-                    "salary": "Income",
-                    "payroll": "Income",
-                    "deposit": "Income",
-                    "transfer": "Transfer",
-                    "payment": "Payment"
-                }
-
-                for vendor, category in default_mappings.items():
-                    save_vendor_mapping(db, vendor, category)
-                logger.info("Added default vendor mappings")
-            except Exception as e:
-                logger.error(f"Error adding default vendor mappings: {str(e)}")
-            finally:
-                db.close()
-        else:
-            # Database exists, check for schema updates
-            inspector = inspect(engine)
-            existing_tables = inspector.get_table_names()
-
-            # For each table in our models
-            for table in Base.metadata.sorted_tables:
-                if table.name not in existing_tables:
-                    # Create missing table
-                    table.create(engine)
-                    logger.info(f"Created missing table: {table.name}")
-                else:
-                    # Check for missing columns
-                    existing_columns = {col['name']
-                                        for col in inspector.get_columns(table.name)}
-                    model_columns = {col.name for col in table.columns}
-                    missing_columns = model_columns - existing_columns
-
-                    if missing_columns:
-                        logger.info(
-                            f"Adding missing columns to {table.name}: {missing_columns}")
-                        with engine.begin() as connection:
-                            for column_name in missing_columns:
-                                column = next(
-                                    col for col in table.columns if col.name == column_name)
-                                # Add column with appropriate type and nullability
-                                connection.execute(text(
-                                    f"ALTER TABLE {table.name} ADD COLUMN {column_name} "
-                                    f"{column.type.compile(engine.dialect)} "
-                                    f"{'NOT NULL' if not column.nullable else ''}"
-                                ))
-                                logger.info(
-                                    f"Added column {column_name} to {table.name}")
+            # Do NOT add or update vendor mappings automatically here
     except Exception as e:
-        logger.error(f"Error initializing/updating database: {str(e)}")
-        raise
+        logger.error(f"Error initializing database: {str(e)}")
 
 
 # Initialize or update database
