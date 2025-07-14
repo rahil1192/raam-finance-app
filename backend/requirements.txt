@@ -27,3 +27,6 @@ opencv-python
 scikit-learn 
 
 layoutparser 
+
+pyjwt
+Pillow 
