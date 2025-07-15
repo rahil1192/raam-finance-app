@@ -39,11 +39,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize database tables if needed (won't recreate if they exist)
-init_db()
+# init_db()
 
 # Ensure category mappings are initialized
 with SessionLocal() as db:
     ensure_category_mappings(db)
+
+# Add FastAPI startup event to initialize DB tables only once
+@api.on_event("startup")
+async def startup_event():
+    init_db()
 
 # Configure logging
 logging.basicConfig(

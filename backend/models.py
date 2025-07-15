@@ -223,7 +223,7 @@ def init_db():
 
 
 # Initialize or update database
-init_db()
+# init_db()
 
 # Helper functions for database operations
 
