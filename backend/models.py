@@ -279,6 +279,16 @@ def get_pdf_content(db, pdf_id):
 def save_transaction(db, transaction_data):
     # Remove is_recurring from transaction_data to avoid double-setting
     is_recurring = transaction_data.pop('is_recurring', None)
+    # Check for duplicate before insert
+    duplicate = db.query(Transaction).filter_by(
+        account_id=transaction_data.get('account_id'),
+        date=transaction_data.get('date'),
+        details=transaction_data.get('details'),
+        amount=transaction_data.get('amount'),
+        transaction_type=transaction_data.get('transaction_type')
+    ).first()
+    if duplicate:
+        return duplicate
     transaction = Transaction(**transaction_data)
     # If explicitly set, use it; otherwise, check rules
     if is_recurring is not None:
