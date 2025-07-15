@@ -38,6 +38,17 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 load_dotenv()
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 # Initialize database tables if needed (won't recreate if they exist)
 # init_db()
 
