@@ -1647,6 +1647,17 @@ def get_recurring_patterns(db: Session = Depends(get_db)):
         })
     return result
 
+def serialize_dates(obj):
+    """Recursively convert datetime/date objects to ISO strings for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: serialize_dates(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_dates(i) for i in obj]
+    elif hasattr(obj, "isoformat"):
+        return obj.isoformat()
+    else:
+        return obj
+
 if __name__ == "__main__":
     import uvicorn
     import socket
