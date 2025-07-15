@@ -45,24 +45,13 @@ load_dotenv()
 with SessionLocal() as db:
     ensure_category_mappings(db)
 
+# Create FastAPI app
+api = FastAPI(title="Finance Categorizer API")
+
 # Add FastAPI startup event to initialize DB tables only once
 @api.on_event("startup")
 async def startup_event():
     init_db()
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# Create FastAPI app
-api = FastAPI(title="Finance Categorizer API")
 
 # Add CORS middleware
 api.add_middleware(
