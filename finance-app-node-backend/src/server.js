@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
+const job = require('./config/cron');
 require('dotenv').config();
 
 // Debug logging for environment variables
@@ -24,6 +25,11 @@ const adminRoutes = require('./routes/admin');
 const { initDatabase } = require('./models');
 
 const app = express();
+
+if(process.env.NODE_ENV === 'production') {
+  job.start();
+}
+
 const PORT = process.env.PORT || 8001;
 
 // Trust proxy configuration for Render deployment
