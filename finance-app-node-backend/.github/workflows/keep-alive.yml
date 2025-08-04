@@ -1,0 +1,35 @@
+name: Keep Server Alive
+
+on:
+  schedule:
+    # Run every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Ping Server
+      run: |
+        echo "🔄 Pinging server at https://raam-finance-app.onrender.com..."
+        
+        # Try the keep-alive endpoint first
+        response=$(curl -s -o /dev/null -w "%{http_code}" https://raam-finance-app.onrender.com/keep-alive)
+        echo "Keep-alive endpoint response: $response"
+        
+        # Also try the health endpoint
+        health_response=$(curl -s -o /dev/null -w "%{http_code}" https://raam-finance-app.onrender.com/health)
+        echo "Health endpoint response: $health_response"
+        
+        # If both fail, try the root endpoint
+        if [ "$response" != "200" ] && [ "$health_response" != "200" ]; then
+          echo "⚠️ Server might be sleeping, trying to wake it up..."
+          curl -s https://raam-finance-app.onrender.com/ > /dev/null
+          echo "✅ Wake-up request sent"
+        else
+          echo "✅ Server is responding normally"
+        fi
+        
+        echo "🕐 Keep-alive completed at $(date)" 
