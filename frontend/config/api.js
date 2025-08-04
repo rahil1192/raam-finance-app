@@ -13,30 +13,26 @@ const determineApiUrl = () => {
   console.log('🔧 API_URL_DEV value:', API_URL_DEV);
   console.log('🔧 API_URL_PROD value:', API_URL_PROD);
   
-  // Force use deployed backend for now
-  console.log('🔧 FORCING use of deployed backend');
-  return 'https://raam-finance-app.onrender.com';
-  
   // If we're in development mode
   if (__DEV__) {
     // Try to use API_URL_DEV if available
-    if (API_URL_DEV) {
+    if (API_URL_DEV && API_URL_DEV !== 'undefined') {
       console.log('🔧 Using development URL from env:', API_URL_DEV);
       return API_URL_DEV;
     }
     // Fallback to deployed backend (since local server might not be running)
-    console.log('🔧 Using deployed backend for development');
+    console.log('🔧 No DEV URL in env, using deployed backend for development');
     return 'https://raam-finance-app.onrender.com';
   }
   
   // If we're in production mode
-  if (API_URL_PROD) {
+  if (API_URL_PROD && API_URL_PROD !== 'undefined') {
     console.log('🔧 Using production URL from env:', API_URL_PROD);
     return API_URL_PROD;
   }
   
   // Fallback to deployed backend
-  console.log('🔧 Using deployed backend URL');
+  console.log('🔧 No PROD URL in env, using deployed backend URL');
   return 'https://raam-finance-app.onrender.com';
 };
 
