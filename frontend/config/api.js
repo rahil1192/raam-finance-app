@@ -19,6 +19,9 @@ const determineApiUrl = () => {
   const isProductionBuild = process.env.NODE_ENV === 'production';
   console.log('🔧 Is production build:', isProductionBuild);
   
+  // TEMPORARY: To test production behavior locally, uncomment this line:
+  return 'https://raam-finance-app.onrender.com';
+  
   // If we're in development mode (local development)
   if (__DEV__ && !isProductionBuild) {
     // Try to use API_URL_DEV if available

@@ -3,8 +3,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
-const cron = require('node-cron');
-const fetch = require('node-fetch'); // Add fetch for keep-alive functionality
 require('dotenv').config();
 
 // Debug logging for environment variables
@@ -77,49 +75,6 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development'
   });
 });
-
-// Keep-alive function to prevent server from sleeping
-const keepAlive = async () => {
-  try {
-    const response = await fetch(`https://raam-finance-app.onrender.com/health`);
-    console.log(`🔄 Keep-alive ping: ${response.status} - ${new Date().toISOString()}`);
-  } catch (error) {
-    console.error('❌ Keep-alive ping failed:', error.message);
-  }
-};
-
-// Alternative keep-alive: Log activity to keep the process busy
-const logActivity = () => {
-  console.log(`💓 Server heartbeat: ${new Date().toISOString()} - Server is active`);
-};
-
-// Keep-alive endpoint that can be called externally
-app.get('/keep-alive', (req, res) => {
-  console.log(`🔗 Keep-alive endpoint called: ${new Date().toISOString()}`);
-  res.json({
-    status: 'ALIVE',
-    timestamp: new Date().toISOString(),
-    message: 'Server is awake and running'
-  });
-});
-
-// Schedule keep-alive ping every 14 minutes (to stay under Render's 15-minute limit)
-// This ensures the server stays awake on Render's free tier
-cron.schedule('*/14 * * * *', () => {
-  console.log('⏰ Executing keep-alive ping...');
-  keepAlive();
-  logActivity();
-}, {
-  scheduled: true,
-  timezone: "UTC"
-});
-
-// Also ping immediately when server starts
-setTimeout(() => {
-  console.log('🚀 Initial keep-alive ping...');
-  keepAlive();
-  logActivity();
-}, 5000); // Wait 5 seconds after server starts
 
 // API routes
 app.use('/api/transactions', transactionRoutes);

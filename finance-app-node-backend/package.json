@@ -7,8 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "build": "echo 'No build step required'",
-    "test": "echo 'No tests specified'",
-    "keep-alive": "node keep-alive.js"
+    "test": "echo 'No tests specified'"
   },
   "keywords": [
     "finance",
@@ -28,8 +27,6 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "moment": "^2.29.4",
-    "node-cron": "^3.0.3",
-    "node-fetch": "^2.7.0",
     "pg": "^8.16.3",
     "pg-hstore": "^2.3.4",
     "plaid": "^36.0.0",
