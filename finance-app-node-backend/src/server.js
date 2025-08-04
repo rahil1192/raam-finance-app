@@ -44,11 +44,9 @@ app.use(compression());
 const corsOptions = {
   origin: [
     'http://localhost:3000',
-    'http://192.168.2.19:3000',
     'http://localhost:19006',
-    'http://192.168.2.19:8001',
-    'exp://192.168.2.19:19000',
     'exp://localhost:19000',
+    'https://raam-finance-app.onrender.com',
     process.env.FRONTEND_URL
   ].filter(Boolean),
   credentials: true,

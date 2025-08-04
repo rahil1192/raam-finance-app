@@ -27,7 +27,7 @@ PLAID_ENV=sandbox
 # Server Configuration
 PORT=8001
 NODE_ENV=production
-FRONTEND_URL=https://your-frontend-url.com
+FRONTEND_URL=https://raam-finance-app.onrender.com
 ```
 
 ## Local Development
@@ -46,7 +46,7 @@ FRONTEND_URL=https://your-frontend-url.com
 
 ## Production Deployment
 
-The app is configured to run on Render. The main entry point is `src/server.js`.
+The app is deployed on Render at: **https://raam-finance-app.onrender.com**
 
 ### Render Deployment
 
@@ -57,12 +57,14 @@ The app is configured to run on Render. The main entry point is `src/server.js`.
    - `PLAID_SECRET`: Your Plaid secret
    - `PLAID_ENV`: `sandbox` or `production`
    - `NODE_ENV`: `production`
-   - `FRONTEND_URL`: Your frontend URL
+   - `FRONTEND_URL`: `https://raam-finance-app.onrender.com`
 
 3. Build Command: `npm install`
 4. Start Command: `npm start`
 
 ## API Endpoints
+
+Base URL: `https://raam-finance-app.onrender.com`
 
 - `GET /health` - Health check
 - `GET /api/transactions` - Get all transactions
