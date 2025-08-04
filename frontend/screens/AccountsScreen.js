@@ -23,6 +23,12 @@ const TIME_RANGES = ['1M', '3M', '6M', 'YTD', '1Y', 'ALL'];
 
 export default function App({ navigation }) {
   const { accounts, plaidItems, lastRefresh, refreshAccounts } = useAccounts();
+  
+  // Debug logging for accounts
+  console.log('🔍 AccountsScreen - accounts:', accounts);
+  console.log('🔍 AccountsScreen - accounts type:', typeof accounts);
+  console.log('🔍 AccountsScreen - accounts is array:', Array.isArray(accounts));
+  
   const [selectedTab, setSelectedTab] = useState('NET WORTH');
   const [selectedRange, setSelectedRange] = useState('1M');
   const [refreshing, setRefreshing] = useState(false);

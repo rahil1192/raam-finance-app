@@ -32,9 +32,15 @@ export function AccountsProvider({ children }) {
 
       console.log('✅ Processed accounts:', accountsData.length);
       console.log('✅ Processed plaid items:', plaidItemsData.length);
+      console.log('✅ Accounts data type:', typeof accountsData);
+      console.log('✅ Accounts is array:', Array.isArray(accountsData));
 
-      setAccounts(accountsData);
-      setPlaidItems(plaidItemsData);
+      // Ensure accounts is always an array
+      const safeAccountsData = Array.isArray(accountsData) ? accountsData : [];
+      const safePlaidItemsData = Array.isArray(plaidItemsData) ? plaidItemsData : [];
+
+      setAccounts(safeAccountsData);
+      setPlaidItems(safePlaidItemsData);
       
       // Set the most recent refresh time
       if (lastRefreshData.length > 0) {
