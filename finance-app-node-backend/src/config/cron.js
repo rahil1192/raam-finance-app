@@ -1,13 +1,43 @@
 const cron = require("cron");
 const https = require("https");
 
+// Validate API_URL is set
+if (!process.env.API_URL) {
+  console.error("❌ CRON JOB ERROR: API_URL environment variable is not set!");
+  console.error("Please set API_URL in your Render environment variables.");
+}
+
 const job = new cron.CronJob("*/14 * * * *", function () {
+  console.log("🕐 Cron job executing at:", new Date().toISOString());
+  
+  if (!process.env.API_URL) {
+    console.error("❌ Skipping cron job - API_URL not configured");
+    return;
+  }
+
+  const healthUrl = `${process.env.API_URL}/health`;
+  console.log("📡 Making request to:", healthUrl);
+  
   https
-    .get(process.env.API_URL, (res) => {
-      if (res.statusCode === 200) console.log("GET request sent successfully");
-      else console.log("GET request failed", res.statusCode);
+    .get(healthUrl, (res) => {
+      if (res.statusCode === 200) {
+        console.log("✅ Health check request sent successfully");
+      } else {
+        console.log("⚠️ Health check request failed with status:", res.statusCode);
+      }
     })
-    .on("error", (e) => console.error("Error while sending request", e));
+    .on("error", (e) => {
+      console.error("❌ Error while sending health check request:", e.message);
+    });
+});
+
+// Add job status logging
+job.on('start', () => {
+  console.log("🚀 Cron job started successfully");
+});
+
+job.on('stop', () => {
+  console.log("🛑 Cron job stopped");
 });
 
 module.exports = job;

@@ -27,7 +27,10 @@ const { initDatabase } = require('./models');
 const app = express();
 
 if(process.env.NODE_ENV === 'production') {
+  console.log("🔧 Starting cron job in production mode...");
+  console.log("🔧 API_URL:", process.env.API_URL ? 'SET' : 'NOT SET');
   job.start();
+  console.log("✅ Cron job started successfully");
 }
 
 const PORT = process.env.PORT || 8001;
