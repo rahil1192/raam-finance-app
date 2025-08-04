@@ -1,18 +1,31 @@
 {
   "cli": {
-    "version": ">= 16.6.2",
-    "appVersionSource": "remote"
+    "version": ">= 5.9.1"
   },
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "development",
+        "API_URL_DEV": "http://192.168.2.19:8001",
+        "API_URL_PROD": "https://raam-finance-app.onrender.com"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "production",
+        "API_URL_DEV": "https://raam-finance-app.onrender.com",
+        "API_URL_PROD": "https://raam-finance-app.onrender.com"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "env": {
+        "NODE_ENV": "production",
+        "API_URL_DEV": "https://raam-finance-app.onrender.com",
+        "API_URL_PROD": "https://raam-finance-app.onrender.com"
+      }
     }
   },
   "submit": {

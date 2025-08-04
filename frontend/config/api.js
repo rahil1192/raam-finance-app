@@ -5,16 +5,22 @@ console.log('🔧 Environment variables loaded:');
 console.log('API_URL_DEV:', API_URL_DEV);
 console.log('API_URL_PROD:', API_URL_PROD);
 console.log('__DEV__:', __DEV__);
+console.log('NODE_ENV:', process.env.NODE_ENV);
 
 // Determine the best URL to use
 const determineApiUrl = () => {
   console.log('🔧 Determining API URL...');
   console.log('🔧 __DEV__ value:', __DEV__);
+  console.log('🔧 NODE_ENV value:', process.env.NODE_ENV);
   console.log('🔧 API_URL_DEV value:', API_URL_DEV);
   console.log('🔧 API_URL_PROD value:', API_URL_PROD);
   
-  // If we're in development mode
-  if (__DEV__) {
+  // Check if we're in a production build (not development mode)
+  const isProductionBuild = process.env.NODE_ENV === 'production';
+  console.log('🔧 Is production build:', isProductionBuild);
+  
+  // If we're in development mode (local development)
+  if (__DEV__ && !isProductionBuild) {
     // Try to use API_URL_DEV if available
     if (API_URL_DEV && API_URL_DEV !== 'undefined') {
       console.log('🔧 Using development URL from env:', API_URL_DEV);
@@ -25,14 +31,19 @@ const determineApiUrl = () => {
     return 'https://raam-finance-app.onrender.com';
   }
   
-  // If we're in production mode
-  if (API_URL_PROD && API_URL_PROD !== 'undefined') {
-    console.log('🔧 Using production URL from env:', API_URL_PROD);
-    return API_URL_PROD;
+  // If we're in production mode (production build)
+  if (isProductionBuild || !__DEV__) {
+    if (API_URL_PROD && API_URL_PROD !== 'undefined') {
+      console.log('🔧 Using production URL from env:', API_URL_PROD);
+      return API_URL_PROD;
+    }
+    // Fallback to deployed backend
+    console.log('🔧 No PROD URL in env, using deployed backend URL');
+    return 'https://raam-finance-app.onrender.com';
   }
   
-  // Fallback to deployed backend
-  console.log('🔧 No PROD URL in env, using deployed backend URL');
+  // Final fallback
+  console.log('🔧 Using fallback deployed backend URL');
   return 'https://raam-finance-app.onrender.com';
 };
 
