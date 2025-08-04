@@ -8,6 +8,15 @@ console.log('__DEV__:', __DEV__);
 
 // Determine the best URL to use
 const determineApiUrl = () => {
+  console.log('🔧 Determining API URL...');
+  console.log('🔧 __DEV__ value:', __DEV__);
+  console.log('🔧 API_URL_DEV value:', API_URL_DEV);
+  console.log('🔧 API_URL_PROD value:', API_URL_PROD);
+  
+  // Force use deployed backend for now
+  console.log('🔧 FORCING use of deployed backend');
+  return 'https://raam-finance-app.onrender.com';
+  
   // If we're in development mode
   if (__DEV__) {
     // Try to use API_URL_DEV if available
