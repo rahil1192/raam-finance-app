@@ -15,6 +15,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { isTransferTransaction } from '../../utils/transactions'
 import { transactionService } from '../../services/api'
+import { apiConfig } from '../../config/api'
 
 // Category icons mapping
 const CATEGORY_ICONS = {
@@ -91,7 +92,12 @@ export default function CategoriesTab({ transactions: propTransactions, selected
   const fetchCategoryData = async () => {
     try {
       setLoading(true);
+      console.log('🔍 Fetching category data...');
+      console.log('📡 API Config:', apiConfig);
+      console.log('🌐 Base URL:', apiConfig.baseURL);
+      
       const response = await transactionService.getTransactions();
+      console.log('📦 Category data response:', response);
       
       // Validate response data
       if (!response || !Array.isArray(response)) {
@@ -101,7 +107,17 @@ export default function CategoriesTab({ transactions: propTransactions, selected
       
       processTransactions(response);
     } catch (error) {
-      console.error("Error fetching category data:", error);
+      console.error("❌ Error fetching category data:", error);
+      console.error("❌ Error details:", {
+        message: error.message,
+        name: error.name,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status,
+        config: error.config
+      });
+      setCategoryData([]);
+      setTotalAmount(0);
     } finally {
       setLoading(false);
     }

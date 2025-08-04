@@ -8,11 +8,11 @@ console.log('__DEV__:', __DEV__);
 
 const API_CONFIG = {
   development: {
-    baseURL: API_URL_DEV || 'http://192.168.2.19:8001', // Fallback if env var is undefined
+    baseURL: 'https://raam-finance-app.onrender.com', // Use deployed backend for now
     timeout: 10000,
   },
   production: {
-    baseURL: API_URL_PROD || 'https://raam-finance-app.onrender.com', // Fallback to deployed backend
+    baseURL: 'https://raam-finance-app.onrender.com', // Use deployed backend
     timeout: 15000,
   }
 };
