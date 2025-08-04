@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { Ionicons } from "@expo/vector-icons";
 import axios from 'axios';
+import { apiConfig } from '../config/api';
 
 export default function AccountPickerModal({
   visible,
@@ -26,7 +27,7 @@ export default function AccountPickerModal({
   const fetchAccounts = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('http://localhost:8001/api/accounts');
+      const response = await axios.get(`${apiConfig.baseURL}/accounts`);
       console.log('🔍 AccountPickerModal - API response:', response.data);
       
       if (response.data && response.data.success) {

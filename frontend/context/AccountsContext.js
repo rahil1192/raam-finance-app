@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8001/api';
+import { apiConfig } from '../config/api';
 
 const AccountsContext = createContext();
 
@@ -16,9 +15,9 @@ export function AccountsProvider({ children }) {
       console.log('🔄 Refreshing accounts...');
       
       const [accountsRes, plaidRes, refreshRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/accounts`),
-        axios.get(`${API_BASE_URL}/plaid/items`),
-        axios.get(`${API_BASE_URL}/plaid/last_refresh`)
+        axios.get(`${apiConfig.baseURL}/accounts`),
+        axios.get(`${apiConfig.baseURL}/plaid/items`),
+        axios.get(`${apiConfig.baseURL}/plaid/last_refresh`)
       ]);
 
       console.log('📊 Accounts response:', accountsRes.data);
