@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import axios from 'axios';
+import { transactionService } from '../services/api';
 import { apiConfig } from '../config/api';
 
 const AccountsContext = createContext();
@@ -14,18 +15,17 @@ export function AccountsProvider({ children }) {
     try {
       console.log('🔄 Refreshing accounts...');
       
-      const [accountsRes, plaidRes, refreshRes] = await Promise.all([
-        axios.get(`${apiConfig.baseURL}/accounts`),
-        axios.get(`${apiConfig.baseURL}/plaid/items`),
-        axios.get(`${apiConfig.baseURL}/plaid/last_refresh`)
+      const [accountsData, plaidRes, refreshRes] = await Promise.all([
+        transactionService.getAccounts(),
+        axios.get(`${apiConfig.baseURL}/api/plaid/items`),
+        axios.get(`${apiConfig.baseURL}/api/plaid/last_refresh`)
       ]);
 
-      console.log('📊 Accounts response:', accountsRes.data);
+      console.log('📊 Accounts response:', accountsData);
       console.log('🏦 Plaid items response:', plaidRes.data);
       console.log('⏰ Last refresh response:', refreshRes.data);
 
       // Handle nested response structure
-      const accountsData = accountsRes.data.success ? accountsRes.data.accounts : [];
       const plaidItemsData = plaidRes.data.success ? plaidRes.data.items : [];
       const lastRefreshData = refreshRes.data.success ? refreshRes.data.items : [];
 
