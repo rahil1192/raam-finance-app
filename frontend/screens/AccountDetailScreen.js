@@ -8,7 +8,7 @@ import AntDesign from 'react-native-vector-icons/AntDesign';
 import { useIsFocused } from '@react-navigation/native';
 import { useAccounts } from '../context/AccountsContext';
 
-const API_BASE_URL = 'http://192.168.2.19:8001/api';
+const API_BASE_URL = 'https://raam-finance-app.onrender.com/api';
 const TIME_RANGES = ['1M', '3M', '6M', 'YTD', '1Y', 'ALL'];
 const DATE_RANGES = ['All time', 'This month', 'Last month', 'Custom'];
 const SORT_OPTIONS = ['Date (new to old)', 'Date (old to new)', 'Amount (high to low)', 'Amount (low to high)'];
@@ -217,10 +217,10 @@ export default function AccountDetailScreen({ route, navigation }) {
   }
 
   const filteredTransactions = applyFiltersToTransactions(
-    allTransactions.filter(txn =>
+    allTransactions && Array.isArray(allTransactions) ? allTransactions.filter(txn =>
       txn.details?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       txn.category?.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
+    ) : [],
     filters
   );
 

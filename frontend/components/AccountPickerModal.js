@@ -26,7 +26,7 @@ export default function AccountPickerModal({
   const fetchAccounts = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('http://192.168.2.19:8001/api/accounts');
+      const response = await axios.get('https://raam-finance-app.onrender.com/api/accounts');
       if (response.data) {
         setAccounts(response.data);
       }

@@ -12,7 +12,7 @@ function formatYear(dateStr) {
   return new Date(dateStr).getFullYear().toString();
 }
 
-const API_BASE_URL = 'http://192.168.2.19:8001/api'; // Update if needed
+const API_BASE_URL = 'https://raam-finance-app.onrender.com/api';
 
 const PATTERN_OPTIONS = [
   { key: 'weekly', label: 'Weekly' },
@@ -41,6 +41,8 @@ export default function RecurringTab({ transactions = [] }) {
 
   // Filter for recurring transactions by selected pattern
   const recurringTxns = useMemo(() => {
+    if (!transactions || !Array.isArray(transactions)) return [];
+    
     // If patterns are not loaded yet, show all recurring
     if (!patterns || Object.keys(patterns).length === 0) return transactions.filter(t => t.is_recurring);
     return transactions.filter(t => {

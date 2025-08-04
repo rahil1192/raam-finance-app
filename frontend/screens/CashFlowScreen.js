@@ -18,7 +18,7 @@ const CashFlowScreen = ({ navigation, route }) => {
     React.useCallback(() => {
       const fetchData = async () => {
         setReady(false)
-        const res = await axios.get("http://192.168.2.19:8001/api/transactions")
+        const res = await axios.get("https://raam-finance-app.onrender.com/api/transactions")
         const txns = res.data || []
         setAllTransactions(txns)
 

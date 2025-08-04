@@ -39,6 +39,12 @@ export default function MerchantsTab({ transactions: propTransactions }) {
   }, [propTransactions, currentDate]);
 
   const processTransactions = (transactions) => {
+    if (!transactions || !Array.isArray(transactions)) {
+      setMerchantData([]);
+      setTotalAmount(0);
+      return;
+    }
+    
     // Filter by month
     const monthYear = currentDate.toISOString().slice(0, 7);
     let filtered = transactions.filter(txn => {
@@ -91,7 +97,7 @@ export default function MerchantsTab({ transactions: propTransactions }) {
   const fetchMerchantData = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('http://192.168.2.19:8001/api/transactions');
+      const response = await axios.get('https://raam-finance-app.onrender.com/api/transactions');
       let transactions = response.data;
       processTransactions(transactions);
     } catch (error) {

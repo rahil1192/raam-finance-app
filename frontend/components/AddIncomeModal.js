@@ -1,51 +1,69 @@
-import { useState, useEffect, useRef } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Modal, KeyboardAvoidingView, Platform, Switch } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
-import { useNavigation, useRoute } from "@react-navigation/native"
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  Platform,
+  KeyboardAvoidingView,
+  ActivityIndicator,
+  Switch,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import MerchantPickerModal from "./MerchantPickerModal"
 import CategoryPickerModal from "./CategoryPickerModal"
 import AccountPickerModal from "./AccountPickerModal"
-import axios from "axios"
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { transactionService } from '../services/api';
 
 export default function AddIncomeModal() {
-  const navigation = useNavigation()
-  const route = useRoute()
-  const transaction = route.params?.transaction
+  const navigation = useNavigation();
+  const route = useRoute();
+  const transaction = route.params?.transaction;
 
-  const [amount, setAmount] = useState("")
-  const [category, setCategory] = useState("Select Category")
+  // State variables
+  const [amount, setAmount] = useState(transaction?.amount?.toString() || '');
+  const [category, setCategory] = useState(transaction?.category || 'Select Category');
   const [categoryCode, setCategoryCode] = useState("");
-  const [merchant, setMerchant] = useState("Select Merchant")
-  const [account, setAccount] = useState("Select Account")
-  const [date, setDate] = useState(new Date())
-  const [notes, setNotes] = useState("")
-  const [selectedAccount, setSelectedAccount] = useState(null)
-  const [transactions, setTransactions] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [showMerchantPicker, setShowMerchantPicker] = useState(false)
-  const [showCategoryPicker, setShowCategoryPicker] = useState(false)
-  const [showAccountPicker, setShowAccountPicker] = useState(false)
-  const [initialized, setInitialized] = useState(false)
-  const initializedRef = useRef(false);
+  const [date, setDate] = useState(transaction?.date ? new Date(transaction.date) : new Date());
+  const [notes, setNotes] = useState(transaction?.notes || '');
+  const [merchant, setMerchant] = useState(transaction?.merchant || 'Select Merchant');
+  const [account, setAccount] = useState(transaction?.account_id?.toString() || 'Select Account');
+  const [selectedAccount, setSelectedAccount] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showMerchantPicker, setShowMerchantPicker] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState([]);
+  const [transactions, setTransactions] = useState([]);
   const [isTransfer, setIsTransfer] = useState(false);
   const [recurring, setRecurring] = useState(false);
-  const [previousCategory, setPreviousCategory] = useState(category);
+  const [previousCategory, setPreviousCategory] = useState('');
 
-  // Fetch accounts when modal mounts
   useEffect(() => {
-    const fetchAccounts = async () => {
-      try {
-        const res = await axios.get('http://192.168.2.19:8001/api/accounts');
-        setAccounts(res.data);
-      } catch (e) {
+    fetchAccounts();
+    fetchTransactions();
+  }, []);
+
+  const fetchAccounts = async () => {
+    try {
+      const response = await transactionService.getAccounts();
+      if (response && Array.isArray(response)) {
+        setAccounts(response);
+      } else {
+        console.error('Invalid accounts response:', response);
         setAccounts([]);
       }
-    };
-    fetchAccounts();
-  }, []);
+    } catch (error) {
+      console.error('Error fetching accounts:', error);
+      setAccounts([]);
+    }
+  };
 
   useEffect(() => {
     if (transaction) {
@@ -111,30 +129,26 @@ export default function AddIncomeModal() {
   }
 
   const handleSave = async () => {
-    console.log('handleSave called');
-    let transactionData;
+    if (!amount || !category || !account) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    const transactionData = {
+      amount: parseFloat(amount),
+      category: category,
+      app_category: category,
+      date: date.toISOString().split('T')[0],
+      details: merchant !== 'Select Merchant' ? merchant : notes,
+      notes: notes,
+      transaction_type: 'Credit',
+      account_id: parseInt(account),
+      bank: 'Tangerine - Personal',
+      statement_type: 'Checking',
+    };
+
     try {
-      let validDate = date instanceof Date && !isNaN(date) ? date : new Date();
-      
-      // Determine the category based on transfer toggle
-      let finalCategory = category;
-      if (isTransfer) {
-        finalCategory = "Transfers";
-      }
-      
-      transactionData = {
-        id: transaction?.id || Date.now().toString(),
-        name: merchant,
-        amount: Math.abs(Number.parseFloat(amount)),
-        category: categoryCode || category, // Use categoryCode for backend
-        date: validDate.toISOString(),
-        notes: notes,
-        type: "INCOME",
-        account_id: selectedAccount?.account_id || null,
-        is_transfer: isTransfer, // Add transfer flag
-        is_recurring: recurring, // Add recurring flag
-      }
-      console.log('transactionData constructed:', transactionData);
+      console.log('Transaction data:', transactionData);
     } catch (err) {
       console.error('Error constructing transactionData:', err);
       alert('Error constructing transactionData: ' + err.message);
@@ -143,11 +157,11 @@ export default function AddIncomeModal() {
     console.log('Before try');
     try {
       if (transaction?.id) {
-        const res = await axios.put(`http://192.168.2.19:8001/api/transactions/${transaction.id}`, transactionData);
-        console.log('Update response:', res.data);
+        const res = await transactionService.updateTransaction(transaction.id, transactionData);
+        console.log('Update response:', res);
       } else {
-        const res = await axios.post(`http://192.168.2.19:8001/api/transactions`, transactionData);
-        console.log('Create response:', res.data);
+        const res = await transactionService.createTransaction(transactionData);
+        console.log('Create response:', res);
       }
       console.log('After try, before navigation');
       navigation.goBack();
@@ -177,9 +191,15 @@ export default function AddIncomeModal() {
   const fetchTransactions = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('http://192.168.2.19:8001/api/transactions');
-      setTransactions(res.data);
+      const res = await transactionService.getTransactions();
+      if (res && Array.isArray(res)) {
+        setTransactions(res);
+      } else {
+        console.error('Invalid transactions response:', res);
+        setTransactions([]);
+      }
     } catch (e) {
+      console.error('Error fetching transactions:', e);
       setTransactions([]);
     } finally {
       setLoading(false);

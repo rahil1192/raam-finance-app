@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Modal, KeyboardAvoidingView, Platform, Switch, ActivityIndicator } from "react-native"
+import React, { useState, useEffect, useRef } from "react"
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Modal, KeyboardAvoidingView, Platform, Switch, ActivityIndicator, Alert } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useNavigation, useRoute } from "@react-navigation/native"
 import MerchantPickerModal from "./MerchantPickerModal"
 import CategoryPickerModal from "./CategoryPickerModal"
 import AccountPickerModal from "./AccountPickerModal"
-import axios from "axios"
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { transactionService } from '../services/api';
 
 export default function AddExpenseModal() {
   console.log("Rendering AddExpenseModal");
@@ -40,9 +40,15 @@ export default function AddExpenseModal() {
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
-        const res = await axios.get('http://192.168.2.19:8001/api/accounts');
-        setAccounts(res.data);
-      } catch (e) {
+        const response = await transactionService.getAccounts();
+        if (response && Array.isArray(response)) {
+          setAccounts(response);
+        } else {
+          console.error('Invalid accounts response:', response);
+          setAccounts([]);
+        }
+      } catch (error) {
+        console.error('Error fetching accounts:', error);
         setAccounts([]);
       }
     };
@@ -112,30 +118,26 @@ export default function AddExpenseModal() {
   }
 
   const handleSave = async () => {
-    console.log('handleSave called');
-    let transactionData;
+    if (!amount || !category || !account) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    const transactionData = {
+      amount: parseFloat(amount),
+      category: category,
+      app_category: category,
+      date: date.toISOString().split('T')[0],
+      details: merchant !== 'Select Merchant' ? merchant : notes,
+      notes: notes,
+      transaction_type: 'Debit',
+      account_id: parseInt(account),
+      bank: 'Tangerine - Personal',
+      statement_type: 'Checking',
+    };
+
     try {
-      let validDate = date instanceof Date && !isNaN(date) ? date : new Date();
-      
-      // Determine the category based on transfer toggle
-      let finalCategory = category;
-      if (isTransfer) {
-        finalCategory = "Transfers";
-      }
-      
-      transactionData = {
-        id: transaction?.id || Date.now().toString(),
-        name: merchant,
-        amount: -Math.abs(Number.parseFloat(amount)),
-        category: categoryCode || category,
-        date: validDate.toISOString(),
-        notes: notes,
-        type: "EXPENSE",
-        account_id: selectedAccount?.account_id || null,
-        is_transfer: isTransfer, // Add transfer flag
-        is_recurring: recurring, // Add recurring flag
-      }
-      console.log('transactionData constructed:', transactionData);
+      console.log('Transaction data:', transactionData);
     } catch (err) {
       console.error('Error constructing transactionData:', err);
       alert('Error constructing transactionData: ' + err.message);
@@ -144,11 +146,11 @@ export default function AddExpenseModal() {
     console.log('Before try');
     try {
       if (transaction?.id) {
-        const res = await axios.put(`http://192.168.2.19:8001/api/transactions/${transaction.id}`, transactionData);
-        console.log('Update response:', res.data);
+        const res = await transactionService.updateTransaction(transaction.id, transactionData);
+        console.log('Update response:', res);
       } else {
-        const res = await axios.post(`http://192.168.2.19:8001/api/transactions`, transactionData);
-        console.log('Create response:', res.data);
+        const res = await transactionService.createTransaction(transactionData);
+        console.log('Create response:', res);
       }
       console.log('After try, before navigation');
       navigation.goBack();
@@ -163,7 +165,7 @@ export default function AddExpenseModal() {
     if (alwaysRecurring && merchant && merchant !== 'Select Merchant') {
       setSavingRule(true);
       try {
-        await axios.post('http://192.168.2.19:8001/api/recurring_rules', {
+        await transactionService.createRecurringRule({
           merchant: merchant,
           match_type: 'exact',
         });
@@ -192,9 +194,15 @@ export default function AddExpenseModal() {
   const fetchTransactions = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('http://192.168.2.19:8001/api/transactions');
-      setTransactions(res.data);
+      const res = await transactionService.getTransactions();
+      if (res && Array.isArray(res)) {
+        setTransactions(res);
+      } else {
+        console.error('Invalid transactions response:', res);
+        setTransactions([]);
+      }
     } catch (e) {
+      console.error('Error fetching transactions:', e);
       setTransactions([]);
     } finally {
       setLoading(false);

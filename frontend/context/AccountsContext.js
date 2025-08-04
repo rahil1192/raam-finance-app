@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://192.168.2.19:8001/api';
+const API_BASE_URL = 'https://raam-finance-app.onrender.com/api';
 
 const AccountsContext = createContext();
 

@@ -4,9 +4,9 @@ import { useState, useEffect } from "react"
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useNavigation, useFocusEffect } from "@react-navigation/native"
-import axios from "axios"
 import React from "react"
 import { isTransferTransaction } from '../../utils/transactions'
+import { transactionService } from '../../services/api'
 
 export default function DailyTab({ transactions: propTransactions }) {
   const navigation = useNavigation()
@@ -74,12 +74,12 @@ export default function DailyTab({ transactions: propTransactions }) {
   const fetchTransactions = async () => {
     try {
       setLoading(true)
-      const response = await axios.get("http://192.168.2.19:8001/api/transactions")
-      if (!response.data || !Array.isArray(response.data)) {
-        console.error("Invalid response format:", response.data)
+      const response = await transactionService.getTransactions()
+      if (!response || !Array.isArray(response)) {
+        console.error("Invalid response format:", response)
         throw new Error("Invalid response format from server")
       }
-      processTransactions(response.data)
+      processTransactions(response)
     } catch (err) {
       console.error("Error details:", err)
       setError(err.message || "Failed to fetch transactions")
@@ -191,6 +191,9 @@ export default function DailyTab({ transactions: propTransactions }) {
       console.log("Filtering for Transfers...");
       const result = data
         .map((group) => {
+          if (!group.transactions || !Array.isArray(group.transactions)) {
+            return { ...group, transactions: [], total: 0 };
+          }
           const filteredTransactions = group.transactions.filter((transaction) => {
             const isTransfer = isTransferTransaction(transaction);
             if (isTransfer) {
@@ -211,6 +214,9 @@ export default function DailyTab({ transactions: propTransactions }) {
     }
     return data
       .map((group) => {
+        if (!group.transactions || !Array.isArray(group.transactions)) {
+          return { ...group, transactions: [], total: 0 };
+        }
         const filteredTransactions = group.transactions.filter((transaction) => {
           // Exclude transfers from expense and income calculations
           if (isTransferTransaction(transaction)) {

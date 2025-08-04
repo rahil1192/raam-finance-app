@@ -13,8 +13,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import axios from 'axios';
 import { isTransferTransaction } from '../../utils/transactions'
+import { transactionService } from '../../services/api'
 
 // Category icons mapping
 const CATEGORY_ICONS = {
@@ -91,93 +91,29 @@ export default function CategoriesTab({ transactions: propTransactions, selected
   const fetchCategoryData = async () => {
     try {
       setLoading(true);
-      // Use the same direct axios call as DailyTab
-      const response = await axios.get("http://192.168.2.19:8001/api/transactions");
+      const response = await transactionService.getTransactions();
       
       // Validate response data
-      if (!response.data || !Array.isArray(response.data)) {
-        console.error("Invalid response format:", response.data);
+      if (!response || !Array.isArray(response)) {
+        console.error("Invalid response format:", response);
         throw new Error("Invalid response format from server");
       }
       
-      let transactions = response.data;
-      
-      // Filter by month if needed (same logic as before)
-      if (currentDate) {
-        const monthYear = currentDate.toISOString().slice(0, 7); // Gets YYYY-MM format
-        transactions = transactions.filter(txn => {
-          const txnDate = new Date(txn.date);
-          const txnMonthYear = txnDate.toISOString().slice(0, 7);
-          return txnMonthYear === monthYear;
-        });
-      }
-      
-      if (!transactions || transactions.length === 0) {
-        setCategoryData([]);
-        setTotalAmount(0);
-        setLoading(false);
-        return;
-      }
-      
-      // Filter transactions based on type and exclude transfers
-      const filteredTransactions = transactions.filter(txn => {
-        if (isTransferTransaction(txn)) return false;
-        const isExpense = txn.transaction_type === 'Debit';
-        const isIncome = txn.transaction_type === 'Credit';
-        return (selectedFilter === 'Expenses' && isExpense) || (selectedFilter === 'Income' && isIncome);
-      });
-
-      if (filteredTransactions.length === 0) {
-        setCategoryData([]);
-        setTotalAmount(0);
-        setLoading(false);
-        return;
-      }
-
-      // Group transactions by app_category (not category)
-      const categoryMap = {};
-      filteredTransactions.forEach(txn => {
-        const category = txn.app_category || 'Other';
-        if (!categoryMap[category]) {
-          categoryMap[category] = {
-            amount: 0,
-            count: 0,
-            transactions: [] // Add array to store transactions
-          };
-        }
-        categoryMap[category].amount += Math.abs(parseFloat(txn.amount));
-        categoryMap[category].count += 1;
-        categoryMap[category].transactions.push(txn); // Store the transaction
-      });
-
-      // Convert to array and calculate percentages
-      const total = Object.values(categoryMap).reduce((sum, cat) => sum + cat.amount, 0);
-      setTotalAmount(total);
-
-      const categoryArray = Object.entries(categoryMap).map(([name, data], index) => ({
-        id: String(index + 1),
-        name,
-        icon: CATEGORY_ICONS[name]?.icon || CATEGORY_ICONS['Other'].icon,
-        iconBgColor: CATEGORY_ICONS[name]?.color || CATEGORY_ICONS['Other'].color,
-        amount: selectedFilter === 'Expenses' ? -data.amount : data.amount,
-        percentage: (data.amount / total) * 100,
-        count: data.count,
-        transactions: data.transactions // Include transactions in the category data
-      }));
-
-      // Sort by amount descending
-      categoryArray.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-      setCategoryData(categoryArray);
+      processTransactions(response);
     } catch (error) {
-      console.error('Error fetching category data:', error);
-      setCategoryData([]);
-      setTotalAmount(0);
+      console.error("Error fetching category data:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const processTransactions = (transactions) => {
+    if (!transactions || !Array.isArray(transactions)) {
+      setCategoryData([]);
+      setTotalAmount(0);
+      return;
+    }
+    
     // Filter by month if needed (same logic as before)
     let filtered = transactions;
     if (currentDate) {

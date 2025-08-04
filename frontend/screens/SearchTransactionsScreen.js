@@ -13,6 +13,10 @@ export default function SearchTransactionsScreen({ navigation, route }) {
       setResults([]);
     } else {
       const q = query.trim().toLowerCase();
+      if (!transactions || !Array.isArray(transactions)) {
+        setResults([]);
+        return;
+      }
       setResults(
         transactions.filter(t =>
           (t.details && t.details.toLowerCase().includes(q)) ||

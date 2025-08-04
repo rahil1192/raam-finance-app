@@ -155,7 +155,8 @@ export default function TransactionsScreen({ route }) {
   };
 
   function applyFilters(transactions, filters) {
-    if (!filters) return transactions;
+    if (!filters) return transactions || [];
+    if (!transactions || !Array.isArray(transactions)) return [];
     return transactions.filter(txn => {
       // Filter by type
       if (filters.selectedFilter && filters.selectedFilter !== 'All') {

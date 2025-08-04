@@ -23,7 +23,7 @@ export default function AddBillModal() {
 
   useEffect(() => {
     if (transactionId && !initializedRef.current) {
-      axios.get(`http://192.168.2.19:8001/api/transactions?id=${transactionId}`)
+      axios.get(`https://raam-finance-app.onrender.com/api/transactions?id=${transactionId}`)
         .then(res => {
           if (res.data && res.data.length > 0) {
             const txn = res.data[0];
@@ -63,7 +63,7 @@ export default function AddBillModal() {
       fromAccount: fromAccount,
     }
     try {
-      await axios.post(`http://192.168.2.19:8001/api/transactions`, transactionData);
+      await axios.post(`https://raam-finance-app.onrender.com/api/transactions`, transactionData);
       navigation.goBack();
     } catch (error) {
       console.error('Error creating bill:', error);

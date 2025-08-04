@@ -1,15 +1,24 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Button, View, Text, TouchableOpacity, FlatList, StyleSheet, Image, RefreshControl, ScrollView, Modal, TouchableWithoutFeedback } from 'react-native';
-import { create, open } from 'react-native-plaid-link-sdk';
-import axios from 'axios';
-import { AntDesign } from '@expo/vector-icons';
-import { LineChart } from 'react-native-chart-kit';
-import { Dimensions } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  Alert,
+  Modal,
+  Dimensions,
+  FlatList,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAccounts } from '../context/AccountsContext';
+import { create, open } from 'react-native-plaid-link-sdk';
+import { plaidService } from '../services/api';
+import { apiConfig } from '../config/api';
+import { LineChart } from 'react-native-chart-kit';
+import { AntDesign } from '@expo/vector-icons';
 
-const API_BASE_URL = 'http://192.168.2.19:8001/api';
-
-const TABS = ['NET WORTH', 'CASH', 'CREDIT CARDS'];
 const TIME_RANGES = ['1M', '3M', '6M', 'YTD', '1Y', 'ALL'];
 
 export default function App({ navigation }) {
@@ -19,7 +28,6 @@ export default function App({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshMessage, setLastRefreshMessage] = useState('');
   const [expandedBanks, setExpandedBanks] = useState({});
-  const [netWorthHistory, setNetWorthHistory] = useState([]);
   const [loadingNetWorth, setLoadingNetWorth] = useState(false);
   const [tabTotals, setTabTotals] = useState({ netWorth: 0, cash: 0, credit: 0 });
   const [menuVisible, setMenuVisible] = useState(false);
@@ -113,121 +121,67 @@ export default function App({ navigation }) {
       // needsUpdate is now derived from context
     }
     try {
-      // Use the new sync endpoint
-      const response = await axios.post(`${API_BASE_URL}/plaid/sync_transactions`);
-      if (typeof response.data.added === 'number' || typeof response.data.modified === 'number' || typeof response.data.removed === 'number') {
-        setLastRefreshMessage(`Added: ${response.data.added}, Modified: ${response.data.modified}, Removed: ${response.data.removed}`);
-      } else if (response.data.transactions_imported > 0) {
-        setLastRefreshMessage(`${response.data.transactions_imported} new transactions imported`);
-      } else {
-        setLastRefreshMessage('No new transactions found');
-      }
       await refreshAccounts();
+      setLastRefreshMessage('Accounts refreshed successfully');
     } catch (error) {
-      if (error.response?.data?.error === 'ITEM_LOGIN_REQUIRED') {
-        setLastRefreshMessage('Bank credentials need updating. Please use the update button.');
-      } else {
-        setLastRefreshMessage('Error refreshing transactions');
-      }
+      console.error('Error refreshing accounts:', error);
+      setLastRefreshMessage('Error refreshing accounts');
     } finally {
       setRefreshing(false);
     }
-  }, [refreshAccounts, plaidItems, lastRefresh]);
+  }, [refreshAccounts]);
 
-  // Filter accounts for selected tab
+  // Group accounts by institution
   const getFilteredAccounts = () => {
-    if (selectedTab === 'CASH') {
-      return accounts.filter(account => {
-        const subtype = (account.subtype || '').toLowerCase();
-        return subtype.includes('chequing') || subtype.includes('checking') || subtype.includes('savings');
-      });
-    } else if (selectedTab === 'CREDIT CARDS') {
-      return accounts.filter(account => {
-        const subtype = (account.subtype || '').toLowerCase();
-        return subtype.includes('credit');
-      });
-    }
-    // NET WORTH: show all
-    return accounts;
+    const accountsByBank = {};
+    accounts.forEach(account => {
+      const bankName = account.institution_name || 'Unknown Bank';
+      if (!accountsByBank[bankName]) {
+        accountsByBank[bankName] = [];
+      }
+      accountsByBank[bankName].push(account);
+    });
+    return accountsByBank;
   };
 
-  // Group filtered accounts by bank name
-  const groupedAccounts = getFilteredAccounts().reduce((acc, account) => {
-    const bank = account.official_name ? account.official_name.split(' ')[0] : 'Other';
-    if (!acc[bank]) acc[bank] = [];
-    acc[bank].push(account);
-    return acc;
-  }, {});
-
-  // Calculate total for a bank using the same logic as net worth
   const getBankTotal = (accounts) => calculateNetWorth(accounts);
 
-  // Toggle expand/collapse for a bank
   const toggleBank = (bank) => {
-    setExpandedBanks(prev => ({ ...prev, [bank]: !prev[bank] }));
+    setExpandedBanks(prev => ({
+      ...prev,
+      [bank]: !prev[bank]
+    }));
   };
 
   // Helper to get start date for a range
   const getStartDate = (range) => {
     const now = new Date();
     switch (range) {
-      case '1M': return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-      case '3M': return new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
-      case '6M': return new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
-      case 'YTD': return new Date(now.getFullYear(), 0, 1);
-      case '1Y': return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-      case 'ALL': return null;
-      default: return null;
+      case '1M':
+        return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      case '3M':
+        return new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+      case '6M':
+        return new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+      case '1Y':
+        return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      default:
+        return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
     }
   };
 
-  // Helper to get the backend type for the selected tab
+  // Helper to get history type based on selected tab
   const getHistoryType = (tab) => {
-    if (tab === 'NET WORTH') return 'networth';
-    if (tab === 'CASH') return 'cash';
-    if (tab === 'CREDIT CARDS') return 'credit';
-    return 'networth';
-  };
-
-  // Fetch net worth history when selectedRange or selectedTab changes
-  useEffect(() => {
-    const fetchNetWorthHistory = async () => {
-      setLoadingNetWorth(true);
-      try {
-        const now = new Date();
-        const startDate = getStartDate(selectedRange);
-        let url = `${API_BASE_URL}/networth/history?type=${getHistoryType(selectedTab)}`;
-        if (startDate) {
-          const startStr = startDate.toISOString().slice(0, 10);
-          const endStr = now.toISOString().slice(0, 10);
-          url += `&start=${startStr}&end=${endStr}`;
-        }
-        const res = await axios.get(url);
-        setNetWorthHistory(res.data);
-      } catch (e) {
-        console.error('Error fetching net worth history:', e);
-        setNetWorthHistory([]);
-      } finally {
-        setLoadingNetWorth(false);
-      }
-    };
-    fetchNetWorthHistory();
-  }, [selectedRange, selectedTab]);
-
-  // Prepare chart data
-  const chartData = {
-    labels: netWorthHistory.length > 0 ? netWorthHistory.map((d, i) => {
-      // Show only a few labels for clarity
-      if (i === 0 || i === netWorthHistory.length - 1 || (netWorthHistory.length > 7 && i % Math.ceil(netWorthHistory.length / 5) === 0)) {
-        return d.date.slice(5); // MM-DD
-      }
-      return '';
-    }) : [],
-    datasets: [
-      {
-        data: netWorthHistory.map(d => (typeof d.value === 'number' && !isNaN(d.value)) ? d.value : 0)
-      }
-    ]
+    switch (tab) {
+      case 'NET WORTH':
+        return 'networth';
+      case 'CASH':
+        return 'assets';
+      case 'CREDIT':
+        return 'liabilities';
+      default:
+        return 'networth';
+    }
   };
 
   // Handler for three-dot menu
@@ -252,44 +206,65 @@ export default function App({ navigation }) {
     }
   }, [lastRefreshMessage]);
 
-  // Add Plaid Link handler for adding accounts
+  // Plaid Link configuration
   const handlePlaidLink = async () => {
+    console.log('🔗 Add Account button clicked');
+    console.log('📱 Device info:', __DEV__ ? 'Development' : 'Production');
+    
     try {
-      setLastRefreshMessage('Connecting to bank...');
-      // First fetch the link token
-      const res = await axios.post(`${API_BASE_URL}/plaid/create_link_token`, {
-        update_mode: false
-      }, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      const token = res.data.link_token;
-      if (!token) {
-        setLastRefreshMessage('Error: Could not connect to bank');
+      console.log('🚀 Attempting to create link token...');
+      console.log('🌐 API Config:', apiConfig);
+      console.log('🔗 API Base URL:', apiConfig.baseURL);
+      
+      const response = await plaidService.createLinkToken();
+      console.log('✅ Link token response received:', response);
+      
+      const linkToken = response.link_token;
+      console.log('🎫 Link token extracted:', linkToken ? 'Present' : 'Missing');
+      
+      if (!linkToken) {
+        console.error('❌ No link token received');
+        setLastRefreshMessage('Error: No link token received');
         return;
       }
-      create({ token, noLoadingState: false });
+
+      console.log('🔓 Creating Plaid Link with token...');
+      create({ token: linkToken });
+      
+      console.log('🚪 Opening Plaid Link...');
       open({
         onSuccess: async (result) => {
+          console.log('✅ Plaid Link success:', result);
           setLastRefreshMessage('Successfully connected to bank');
-          await axios.post(`${API_BASE_URL}/plaid/exchange_public_token`, {
-            public_token: result.publicToken,
-          });
-          await refreshAccounts();
+          try {
+            console.log('🔄 Exchanging public token...');
+            await plaidService.exchangePublicToken(result.publicToken);
+            console.log('✅ Public token exchanged successfully');
+            await refreshAccounts();
+            console.log('✅ Accounts refreshed');
+          } catch (error) {
+            console.error('❌ Error exchanging public token:', error);
+            setLastRefreshMessage('Error connecting to bank');
+          }
         },
         onExit: (result) => {
+          console.log('🚪 Plaid Link exited:', result);
           if (result.error) {
+            console.error('❌ Plaid Link error:', result.error);
             setLastRefreshMessage(`Error: ${result.error.displayMessage || 'Could not connect to bank'}`);
           }
         },
       });
     } catch (error) {
-      let errorMessage = 'Error connecting to bank';
-      if (error.response?.data?.detail) {
-        errorMessage = `Error: ${error.response.data.detail}`;
-      }
-      setLastRefreshMessage(errorMessage);
+      console.error('❌ Error creating link token:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.data,
+        status: error.response?.status,
+        config: error.config
+      });
+      setLastRefreshMessage('Error: Could not create link token');
     }
   };
 
@@ -321,25 +296,21 @@ export default function App({ navigation }) {
         animationType="fade"
         onRequestClose={handleMenuClose}
       >
-        <TouchableWithoutFeedback onPress={handleMenuClose}>
-          <View style={styles.menuOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.menuContainer}>
-                <TouchableOpacity style={styles.menuItem} onPress={handleRefreshAll}>
-                  <Text style={styles.menuItemText}>Refresh all</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.menuItem} onPress={handleViewInstitutionSettings}>
-                  <Text style={styles.menuItemText}>View institution settings</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
+        <View style={styles.menuOverlay}>
+          <View style={styles.menuContainer}>
+            <TouchableOpacity style={styles.menuItem} onPress={handleRefreshAll}>
+              <Text style={styles.menuItemText}>Refresh all</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={handleViewInstitutionSettings}>
+              <Text style={styles.menuItemText}>View institution settings</Text>
+            </TouchableOpacity>
           </View>
-        </TouchableWithoutFeedback>
+        </View>
       </Modal>
 
       {/* Top Net Worth / Cash / Credit Cards Tabs with values */}
       <View style={styles.topTabsContainer}>
-        {TABS.map(tab => (
+        {['NET WORTH', 'CASH', 'CREDIT CARDS'].map(tab => (
           <TouchableOpacity
             key={tab}
             style={[styles.topTab, selectedTab === tab && styles.topTabSelected]}
@@ -371,7 +342,7 @@ export default function App({ navigation }) {
 
       {/* Main Scrollable Content */}
       <FlatList
-        data={[{ key: 'header' }, ...Object.entries(groupedAccounts)]}
+        data={[{ key: 'header' }, ...Object.entries(getFilteredAccounts())]}
         keyExtractor={(item) => item.key || item[0]}
         contentContainerStyle={styles.mainContent}
         renderItem={({ item }) => {
@@ -382,33 +353,10 @@ export default function App({ navigation }) {
                 <View style={styles.graphContainer}>
                   {loadingNetWorth ? (
                     <Text>Loading...</Text>
-                  ) : netWorthHistory.length > 0 ? (
-                    <ScrollView 
-                      horizontal 
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.graphScrollContent}
-                    >
-                      <LineChart
-                        data={chartData}
-                        width={Math.max(Dimensions.get('window').width - 32, netWorthHistory.length * 50)}
-                        height={220}
-                        yAxisLabel="$"
-                        chartConfig={{
-                          backgroundColor: '#fff',
-                          backgroundGradientFrom: '#fff',
-                          backgroundGradientTo: '#fff',
-                          decimalPlaces: 2,
-                          color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-                          labelColor: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-                          style: { borderRadius: 16 },
-                          propsForDots: { r: '3', strokeWidth: '2', stroke: '#007AFF' }
-                        }}
-                        bezier
-                        style={{ marginVertical: 8, borderRadius: 16 }}
-                      />
-                    </ScrollView>
                   ) : (
-                    <Text style={{ color: '#aaa', marginVertical: 16 }}>No data for this period.</Text>
+                    <View style={styles.noDataContainer}>
+                      <Text style={styles.noDataText}>No net worth history data available</Text>
+                    </View>
                   )}
                 </View>
                 {/* Time Range Tabs at bottom of graph */}
@@ -743,5 +691,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     marginLeft: 4,
+  },
+  noDataContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+  noDataText: {
+    color: '#888',
+    fontSize: 16,
   },
 });

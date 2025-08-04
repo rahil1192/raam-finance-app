@@ -19,7 +19,7 @@ export default function AddTransferModal() {
 
   useEffect(() => {
     if (transactionId && !initializedRef.current) {
-      axios.get(`http://192.168.2.19:8001/api/transactions?id=${transactionId}`)
+      axios.get(`https://raam-finance-app.onrender.com/api/transactions?id=${transactionId}`)
         .then(res => {
           if (res.data && res.data.length > 0) {
             const txn = res.data[0];
@@ -51,7 +51,7 @@ export default function AddTransferModal() {
       type: "TRANSFER",
     }
     try {
-      await axios.post(`http://192.168.2.19:8001/api/transactions`, transactionData);
+      await axios.post(`https://raam-finance-app.onrender.com/api/transactions`, transactionData);
       navigation.goBack();
     } catch (error) {
       console.error('Error creating transaction:', error);

@@ -112,31 +112,39 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
           case 'Weekly':
           case 'Bi-Weekly':
           case 'Custom': {
-            periodTransactions = allTransactions.filter(txn => {
-              if (!txn || !txn.date) return false;
-              const txnDate = new Date(txn.date);
-              txnDate.setHours(0, 0, 0, 0);
-              const start = new Date(startDate);
-              start.setHours(0, 0, 0, 0);
-              const end = new Date(endDate);
-              end.setHours(23, 59, 59, 999);
-              return txnDate >= start && txnDate <= end;
-            });
+            if (!allTransactions || !Array.isArray(allTransactions)) {
+              periodTransactions = [];
+            } else {
+              periodTransactions = allTransactions.filter(txn => {
+                if (!txn || !txn.date) return false;
+                const txnDate = new Date(txn.date);
+                txnDate.setHours(0, 0, 0, 0);
+                const start = new Date(startDate);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                return txnDate >= start && txnDate <= end;
+              });
+            }
             break;
           }
           case 'Monthly': {
             const monthStart = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
             const monthEnd = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
-            periodTransactions = allTransactions.filter(txn => {
-              if (!txn || !txn.date) return false;
-              const txnDate = new Date(txn.date);
-              txnDate.setHours(0, 0, 0, 0);
-              const start = new Date(monthStart);
-              start.setHours(0, 0, 0, 0);
-              const end = new Date(monthEnd);
-              end.setHours(23, 59, 59, 999);
-              return txnDate >= start && txnDate <= end;
-            });
+            if (!allTransactions || !Array.isArray(allTransactions)) {
+              periodTransactions = [];
+            } else {
+              periodTransactions = allTransactions.filter(txn => {
+                if (!txn || !txn.date) return false;
+                const txnDate = new Date(txn.date);
+                txnDate.setHours(0, 0, 0, 0);
+                const start = new Date(monthStart);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(monthEnd);
+                end.setHours(23, 59, 59, 999);
+                return txnDate >= start && txnDate <= end;
+              });
+            }
             break;
           }
         }
@@ -345,7 +353,7 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
           }));
           
           // Get transactions for this week
-          const weekTransactions = allTransactions.filter(txn => {
+          const weekTransactions = allTransactions && Array.isArray(allTransactions) ? allTransactions.filter(txn => {
             if (!txn || !txn.date) return false;
             const txnDate = new Date(txn.date);
             txnDate.setHours(0, 0, 0, 0);
@@ -354,7 +362,7 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
             const end = new Date(weekEnd);
             end.setHours(23, 59, 59, 999);
             return txnDate >= start && txnDate <= end;
-          });
+          }) : [];
           
           // Filter out transfers
           const nonTransferTxns = (weekTransactions || []).filter(t => !isTransferTransaction(t));
@@ -393,7 +401,7 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
           }));
           
           // Get transactions for this bi-weekly period
-          const periodTransactions = allTransactions.filter(txn => {
+          const periodTransactions = allTransactions && Array.isArray(allTransactions) ? allTransactions.filter(txn => {
             if (!txn || !txn.date) return false;
             const txnDate = new Date(txn.date);
             txnDate.setHours(0, 0, 0, 0);
@@ -402,7 +410,7 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
             const end = new Date(periodEnd);
             end.setHours(23, 59, 59, 999);
             return txnDate >= start && txnDate <= end;
-          });
+          }) : [];
           
           // Filter out transfers
           const nonTransferTxns = (periodTransactions || []).filter(t => !isTransferTransaction(t));
@@ -429,7 +437,7 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
           date.setDate(date.getDate() + i);
           labels.push(date.toLocaleDateString('en-GB', { day: 'numeric' }));
           
-          const dayTransactions = allTransactions.filter(txn => {
+          const dayTransactions = allTransactions && Array.isArray(allTransactions) ? allTransactions.filter(txn => {
             if (!txn || !txn.date) return false;
             const txnDate = new Date(txn.date);
             // Set hours to 0 for proper date comparison
@@ -437,7 +445,7 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
             const compareDate = new Date(date);
             compareDate.setHours(0, 0, 0, 0);
             return txnDate.getTime() === compareDate.getTime();
-          });
+          }) : [];
           
           // Filter out transfers
           const nonTransferTxns = (dayTransactions || []).filter(t => !isTransferTransaction(t));

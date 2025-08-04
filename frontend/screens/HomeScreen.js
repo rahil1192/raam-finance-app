@@ -1,26 +1,27 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useFocusEffect } from "@react-navigation/native"
-import { useNavigation } from '@react-navigation/native';
+import React, { useState, useEffect } from "react"
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Dimensions,
+  Alert,
   Modal,
+  FlatList,
+  TextInput,
   TouchableWithoutFeedback,
 } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
-import { FontAwesome5 } from "@expo/vector-icons"
-import { MaterialCommunityIcons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { useFocusEffect } from "@react-navigation/native"
+import { Ionicons } from "@expo/vector-icons"
+import { MaterialCommunityIcons } from "@expo/vector-icons"
+import { FontAwesome5 } from "@expo/vector-icons"
+import { LineChart, BarChart } from "react-native-chart-kit"
 import axios from "axios"
-import { LineChart } from "react-native-chart-kit"
-import React from "react"
+import { VictoryLine, VictoryChart, VictoryAxis, VictoryTheme, VictoryArea } from "victory-native"
 
 const { width } = Dimensions.get("window")
 const TIME_RANGES = ["1M", "3M", "6M", "YTD", "1Y", "ALL"]
@@ -35,14 +36,12 @@ const TIME_RANGES_LABELS = [
 ]
 
 export default function HomeScreen({ navigation: propNavigation, route }) {
-  const navigation = useNavigation();
-  // Get the safe area insets
+  const navigation = propNavigation
   const insets = useSafeAreaInsets()
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedTab, setSelectedTab] = useState("networth") // networth, assets, liabilities
   const [selectedRange, setSelectedRange] = useState("1M")
-  const [netWorthHistory, setNetWorthHistory] = useState([])
   const [loadingNetWorth, setLoadingNetWorth] = useState(false)
   const [netWorthData, setNetWorthData] = useState({
     total: 0,
@@ -65,7 +64,6 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
       if (shouldRefresh) {
     fetchTransactions()
     fetchNetWorthData()
-    fetchNetWorthHistory()
       }
 
       // Clear the refresh parameter after using it
@@ -82,12 +80,22 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
 
   const fetchTransactions = async () => {
     try {
-      const response = await fetch(`${__DEV__ ? 'http://192.168.2.19:8001' : 'https://your-app-name.herokuapp.com'}/api/transactions`)
+      const response = await fetch(`${__DEV__ ? 'http://192.168.2.19:8001' : 'https://raam-finance-app.onrender.com'}/api/transactions`)
       const data = await response.json()
       // console.log('Fetched transactions:', data) // Debug log
-      setTransactions(data)
+      
+      // Handle different response formats
+      if (Array.isArray(data)) {
+        setTransactions(data)
+      } else if (data && Array.isArray(data.transactions)) {
+        setTransactions(data.transactions)
+      } else {
+        console.error('Invalid transactions data format:', data)
+        setTransactions([])
+      }
     } catch (error) {
       console.error("Error fetching transactions:", error)
+      setTransactions([])
     } finally {
       setLoading(false)
     }
@@ -95,7 +103,7 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
 
   const fetchNetWorthData = async () => {
     try {
-      const response = await axios.get(`${__DEV__ ? 'http://192.168.2.19:8001' : 'https://your-app-name.herokuapp.com'}/api/accounts`)
+      const response = await axios.get(`${__DEV__ ? 'http://192.168.2.19:8001' : 'https://raam-finance-app.onrender.com'}/api/accounts`)
       const accounts = response.data
 
       // Separate accounts and credit cards
@@ -142,72 +150,17 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
         return new Date(now.getFullYear(), now.getMonth() - 3, now.getDate())
       case "6M":
         return new Date(now.getFullYear(), now.getMonth() - 6, now.getDate())
-      case "YTD":
-        return new Date(now.getFullYear(), 0, 1)
       case "1Y":
         return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
-      case "ALL":
-        return null
       default:
-        return null
+        return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
     }
-  }
-
-  const fetchNetWorthHistory = async () => {
-    setLoadingNetWorth(true)
-    try {
-      const now = new Date()
-      const startDate = getStartDate(selectedRange)
-      let url = `${__DEV__ ? 'http://192.168.2.19:8001' : 'https://your-app-name.herokuapp.com'}/api/networth/history?type=networth`
-      if (startDate) {
-        const startStr = startDate.toISOString().slice(0, 10)
-        const endStr = now.toISOString().slice(0, 10)
-        url += `&start=${startStr}&end=${endStr}`
-      }
-      const res = await axios.get(url)
-      setNetWorthHistory(res.data)
-    } catch (e) {
-      console.error("Error fetching net worth history:", e)
-      setNetWorthHistory([])
-    } finally {
-      setLoadingNetWorth(false)
-    }
-  }
-
-  // Prepare chart data
-  const chartData = {
-    labels:
-      netWorthHistory.length > 0
-        ? netWorthHistory.map((d, i) => {
-            // Show only a few labels for clarity
-            if (
-              i === 0 ||
-              i === netWorthHistory.length - 1 ||
-              (netWorthHistory.length > 7 && i % Math.ceil(netWorthHistory.length / 5) === 0)
-            ) {
-              return d.date.slice(5) // MM-DD
-            }
-            return ""
-          })
-        : [],
-    datasets: [
-      {
-        data: netWorthHistory.map((d) => (typeof d.value === "number" && !isNaN(d.value) ? d.value : 0)),
-      },
-    ],
   }
 
   // Calculate net worth change and percent for the selected period
   let netWorthChange = 0
   let netWorthChangePercent = 0
   let netWorthChangePositive = true
-  if (netWorthHistory.length > 1) {
-    const first = netWorthHistory[0].value
-    const last = netWorthHistory[netWorthHistory.length - 1].value
-    netWorthChange = last - first
-    netWorthChangePercent = first !== 0 ? (netWorthChange / Math.abs(first)) * 100 : 0
-    netWorthChangePositive = netWorthChange > 0
-  }
 
   // Add this function to handle chart press
   const handleChartPress = () => {
@@ -254,128 +207,72 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
                 <View style={styles.loadingContainer}>
                   <Text style={styles.loadingText}>Loading...</Text>
                 </View>
-              ) : netWorthHistory.length > 0 ? (
-                <TouchableOpacity activeOpacity={0.8} onPress={handleChartPress} style={styles.chartTouchable}>
-                  <LineChart
-                    data={chartData}
-                    width={width - 72}
-                    height={140}
-                    yAxisLabel=""
-                    withVerticalLines={false}
-                    withHorizontalLines={false}
-                    withDots={false}
-                    withShadow={true}
-                    chartConfig={{
-                      backgroundColor: "#18191a",
-                      backgroundGradientFrom: "#18191a",
-                      backgroundGradientTo: "#18191a",
-                      decimalPlaces: 2,
-                      color: (opacity = 1) => `rgba(0, 212, 255, ${opacity})`,
-                      labelColor: () => "rgba(0,0,0,0)",
-                      propsForBackgroundLines: { stroke: "none" },
-                      propsForDots: { r: "0" },
-                      propsForLabels: { display: "none" },
-                      fillShadowGradient: "#00d4ff",
-                      fillShadowGradientOpacity: 0.15,
-                      style: { borderRadius: 12 },
-                    }}
-                    bezier
-                    style={{ borderRadius: 12 }}
-                  />
-                  <View style={styles.chartOverlay}>
-                    <Ionicons name="expand-outline" size={20} color="#ffffff" />
-                    <Text style={styles.chartOverlayText}>Tap to expand</Text>
-                  </View>
-                </TouchableOpacity>
               ) : (
                 <View style={styles.noDataContainer}>
-                  <Text style={styles.noDataText}>No data for this period.</Text>
+                  <Text style={styles.noDataText}>No net worth history data available</Text>
                 </View>
               )}
             </View>
           </View>
         )
-
       case "assets":
         return (
           <View style={styles.tabContent}>
-            <View style={styles.itemsList}>
-              {netWorthData.accounts && netWorthData.accounts.length > 0 ? (
-                netWorthData.accounts.map((account, idx) => (
-                  <View key={account.id || idx} style={styles.itemRow}>
-                    <View style={styles.itemInfo}>
-                      <View style={[styles.dot, { backgroundColor: "#19e68c" }]} />
-                      <Text style={styles.itemName}>
-                        {account.subtype
-                          ? account.subtype.charAt(0).toUpperCase() + account.subtype.slice(1)
-                          : account.name || "Cash"}
-                      </Text>
-                    </View>
-                    <Text style={styles.itemValue}>
-                      ${(account.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </Text>
-                  </View>
-                ))
+            <View style={styles.netWorthHeader}>
+              <View style={styles.netWorthInfo}>
+                <Text style={styles.netWorthValue}>
+                  ${netWorthData.assets.toLocaleString()}
+                </Text>
+                <Text style={styles.netWorthLabel}>Total Assets</Text>
+              </View>
+              <TouchableOpacity style={styles.menuButton} onPress={() => setMenuVisible(true)}>
+                <Ionicons name="ellipsis-horizontal" size={20} color="#b0b0b0" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.chartContainer}>
+              {loadingNetWorth ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.loadingText}>Loading...</Text>
+                </View>
               ) : (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>No assets found</Text>
+                <View style={styles.noDataContainer}>
+                  <Text style={styles.noDataText}>No assets history data available</Text>
                 </View>
               )}
             </View>
-            <View style={styles.divider} />
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Total</Text>
-              <Text style={styles.summaryAmount}>
-                ${netWorthData.assets.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </Text>
-            </View>
           </View>
         )
-
       case "liabilities":
         return (
           <View style={styles.tabContent}>
-            <View style={styles.itemsList}>
-              {netWorthData.creditCards && netWorthData.creditCards.length > 0 ? (
-                netWorthData.creditCards.map((card, idx) => (
-                  <View key={card.id || idx} style={styles.itemRow}>
-                    <View style={styles.itemInfo}>
-                      <View style={[styles.dot, { backgroundColor: "#ef4444" }]} />
-                      <Text style={styles.itemName}>
-                        {card.subtype
-                          ? card.subtype.charAt(0).toUpperCase() + card.subtype.slice(1)
-                          : card.name || "Credit Card"}
-                      </Text>
-                    </View>
-                    <Text style={styles.itemValue}>
-                      ${(card.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </Text>
-                  </View>
-                ))
+            <View style={styles.netWorthHeader}>
+              <View style={styles.netWorthInfo}>
+                <Text style={styles.netWorthValue}>
+                  ${Math.abs(netWorthData.liabilities).toLocaleString()}
+                </Text>
+                <Text style={styles.netWorthLabel}>Total Liabilities</Text>
+              </View>
+              <TouchableOpacity style={styles.menuButton} onPress={() => setMenuVisible(true)}>
+                <Ionicons name="ellipsis-horizontal" size={20} color="#b0b0b0" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.chartContainer}>
+              {loadingNetWorth ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.loadingText}>Loading...</Text>
+                </View>
               ) : (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>No liabilities found</Text>
+                <View style={styles.noDataContainer}>
+                  <Text style={styles.noDataText}>No liabilities history data available</Text>
                 </View>
               )}
             </View>
-            <View style={styles.divider} />
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Total</Text>
-              <Text style={styles.summaryAmount}>
-                ${netWorthData.liabilities.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </Text>
-            </View>
           </View>
         )
-
       default:
-        return (
-          <View style={styles.tabContent}>
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>Select a tab to view data</Text>
-            </View>
-          </View>
-        )
+        return null
     }
   }
 
@@ -410,6 +307,8 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
 
   // Helper to get daily cumulative spending for a given month
   function getCumulativeSpending(transactions, year, month) {
+    if (!transactions || !Array.isArray(transactions)) return Array(new Date(year, month + 1, 0).getDate()).fill(0);
+    
     // Only include expenses (debits)
     const filtered = transactions.filter(t => {
       const date = new Date(t.date)
@@ -433,6 +332,15 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
   }
 
   const SpendingWidget = ({ transactions, navigation }) => {
+    if (!transactions || !Array.isArray(transactions)) {
+      return (
+        <View style={{backgroundColor: '#18191a', borderRadius: 16, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4}}>
+          <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 18, marginBottom: 2}}>Spending</Text>
+          <Text style={{color: '#b0b0b0', fontSize: 13}}>Loading...</Text>
+        </View>
+      );
+    }
+    
     const now = new Date()
     const thisYear = now.getFullYear()
     const thisMonth = now.getMonth()
@@ -764,154 +672,9 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
                 <View style={styles.loadingContainer}>
                   <Text style={styles.loadingText}>Loading...</Text>
                 </View>
-              ) : netWorthHistory.length > 0 ? (
-                <>
-                  {/* Scrollable Chart with Fixed Y-Axis */}
-                  <View style={styles.scrollableChartWrapper}>
-                    {/* Fixed Y-Axis */}
-                    <View style={styles.fixedYAxis}>
-                      {(() => {
-                        const values = netWorthHistory.map((d) => d.value)
-                        const minValue = Math.min(...values)
-                        const maxValue = Math.max(...values)
-                        const range = maxValue - minValue
-                        const step = range / 4
-                        const yLabels = []
-
-                        for (let i = 0; i <= 4; i++) {
-                          const value = maxValue - step * i
-                          yLabels.push(value)
-                        }
-
-                        return yLabels.map((value, index) => (
-                          <View key={index} style={styles.yAxisLabelWrapper}>
-                            <Text style={styles.yAxisLabelText}>${Math.round(value).toLocaleString()}</Text>
-                          </View>
-                        ))
-                      })()}
-                    </View>
-
-                    {/* Scrollable Chart Area */}
-                    <View style={styles.scrollableChartArea}>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.chartScrollContainer}>
-                        <View style={styles.extendedChartContainer}>
-                          <LineChart
-                            data={{
-                              labels: netWorthHistory.map((d, i) => {
-                                // Show more labels in the scrollable view
-                                if (i % Math.max(1, Math.floor(netWorthHistory.length / 10)) === 0) {
-                                  return d.date.slice(5) // MM-DD
-                                }
-                                return ""
-                              }),
-                              datasets: [
-                                {
-                                  data: netWorthHistory.map((d) => d.value),
-                                },
-                              ],
-                            }}
-                            width={Math.max(width - 100, netWorthHistory.length * 40)} // Dynamic width based on data points
-                            height={200}
-                            yAxisLabel="$"
-                            withVerticalLines={true}
-                            withHorizontalLines={true}
-                            withDots={true}
-                            withShadow={false}
-                            chartConfig={{
-                              backgroundColor: "#18191a",
-                              backgroundGradientFrom: "#18191a",
-                              backgroundGradientTo: "#18191a",
-                              decimalPlaces: 0,
-                              color: (opacity = 1) => `rgba(0, 212, 255, ${opacity})`,
-                              labelColor: () => "#b0b0b0",
-                              propsForBackgroundLines: {
-                                stroke: "rgba(255,255,255,0.1)",
-                                strokeWidth: 1,
-                              },
-                              propsForDots: {
-                                r: "3",
-                                strokeWidth: "1",
-                                stroke: "#00d4ff",
-                                fill: "#00d4ff",
-                              },
-                              propsForLabels: {
-                                fill: "#b0b0b0",
-                                fontSize: 10,
-                              },
-                              style: {
-                                borderRadius: 0,
-                              },
-                            }}
-                            bezier={false}
-                            style={{
-                              marginVertical: 0,
-                              borderRadius: 0,
-                            }}
-                          />
-                        </View>
-                      </ScrollView>
-                    </View>
-                  </View>
-
-                  <View style={styles.chartLegend}>
-                    <Text style={styles.chartLegendTitle}>
-                      {TIME_RANGES_LABELS.find((r) => r.key === selectedRange)?.label || selectedRange}
-                    </Text>
-                    <View style={styles.chartStats}>
-                      <View style={styles.chartStatItem}>
-                        <Text style={styles.chartStatLabel}>Start</Text>
-                        <Text style={styles.chartStatValue}>
-                          ${netWorthHistory[0]?.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </Text>
-                      </View>
-                      <View style={styles.chartStatItem}>
-                        <Text style={styles.chartStatLabel}>End</Text>
-                        <Text style={styles.chartStatValue}>
-                          $
-                          {netWorthHistory[netWorthHistory.length - 1]?.value.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                          })}
-                        </Text>
-                      </View>
-                      <View style={styles.chartStatItem}>
-                        <Text style={styles.chartStatLabel}>Change</Text>
-                        <Text
-                          style={[
-                            styles.chartStatValue,
-                            {
-                              color: netWorthChange === 0 ? "#b0b0b0" : netWorthChange > 0 ? "#19e68c" : "#ef4444",
-                            },
-                          ]}
-                        >
-                          {netWorthChange >= 0 ? "+" : ""}$
-                          {Math.abs(netWorthChange).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.chartDataTable}>
-                    <View style={styles.chartDataHeader}>
-                      <Text style={styles.chartDataHeaderText}>Date</Text>
-                      <Text style={styles.chartDataHeaderText}>Value</Text>
-                    </View>
-                    <ScrollView style={styles.chartDataList}>
-                      {netWorthHistory.map((item, index) => (
-                        <View key={index} style={styles.chartDataRow}>
-                          <Text style={styles.chartDataDate}>{item.date}</Text>
-                          <Text style={styles.chartDataValue}>
-                            ${item.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </Text>
-                        </View>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </>
               ) : (
                 <View style={styles.noDataContainer}>
-                  <Text style={styles.noDataText}>No data for this period.</Text>
+                  <Text style={styles.noDataText}>No net worth history data available</Text>
                 </View>
               )}
             </View>
