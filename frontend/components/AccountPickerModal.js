@@ -26,12 +26,21 @@ export default function AccountPickerModal({
   const fetchAccounts = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('https://raam-finance-app.onrender.com/api/accounts');
-      if (response.data) {
-        setAccounts(response.data);
+      const response = await axios.get('http://localhost:8001/api/accounts');
+      console.log('🔍 AccountPickerModal - API response:', response.data);
+      
+      if (response.data && response.data.success) {
+        // Handle nested response structure
+        const accountsData = response.data.accounts || [];
+        console.log('🔍 AccountPickerModal - Processed accounts:', accountsData.length);
+        setAccounts(accountsData);
+      } else {
+        console.error('❌ Invalid accounts response:', response.data);
+        setAccounts([]);
       }
     } catch (error) {
-      console.error('Error fetching accounts:', error);
+      console.error('❌ Error fetching accounts:', error);
+      setAccounts([]);
     } finally {
       setLoading(false);
     }
@@ -56,10 +65,10 @@ export default function AccountPickerModal({
   };
 
   // Filter accounts based on search
-  const filteredAccounts = accounts.filter(account =>
+  const filteredAccounts = accounts && Array.isArray(accounts) ? accounts.filter(account =>
     account.name.toLowerCase().includes(search.toLowerCase()) ||
     account.official_name?.toLowerCase().includes(search.toLowerCase())
-  );
+  ) : [];
 
   const getAccountIcon = (type) => {
     switch (type?.toLowerCase()) {

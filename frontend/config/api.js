@@ -20,7 +20,10 @@ const determineApiUrl = () => {
   console.log('🔧 Is production build:', isProductionBuild);
   
   // TEMPORARY: To test production behavior locally, uncomment this line:
-  return 'https://raam-finance-app.onrender.com';
+  // return 'https://raam-finance-app.onrender.com';
+  
+  // For local development testing:
+  return 'http://localhost:8001';
   
   // If we're in development mode (local development)
   if (__DEV__ && !isProductionBuild) {
