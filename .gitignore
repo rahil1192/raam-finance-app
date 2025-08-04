@@ -95,7 +95,4 @@ yarn-error.*
 .env*.local
 
 # typescript
-*.tsbuildinfo
-
-# Frontend (React Native/Expo app)
-frontend/ 
+*.tsbuildinfo 
