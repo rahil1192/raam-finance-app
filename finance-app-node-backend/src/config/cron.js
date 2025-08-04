@@ -31,15 +31,6 @@ const job = new cron.CronJob("*/14 * * * *", function () {
     });
 });
 
-// Add job status logging
-job.on('start', () => {
-  console.log("🚀 Cron job started successfully");
-});
-
-job.on('stop', () => {
-  console.log("🛑 Cron job stopped");
-});
-
 module.exports = job;
 
 
