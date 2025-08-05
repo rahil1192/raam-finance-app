@@ -178,7 +178,7 @@ export default function AddIncomeModal() {
       amount: transactionAmount,
       category: category,
       app_category: category,
-      date: date.toISOString().split('T')[0],
+      date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
       details: details,
       notes: notes || '',
       transaction_type: 'Credit',
