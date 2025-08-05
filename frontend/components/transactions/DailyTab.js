@@ -34,10 +34,27 @@ export default function DailyTab({ transactions: propTransactions }) {
     // Group transactions by date
     const groupedTransactions = txns.reduce((groups, transaction) => {
       if (!transaction || !transaction.date || !transaction.amount) return groups
-      const date = new Date(transaction.date).toLocaleDateString("en-US", {
+      
+      // Parse date properly to avoid timezone issues
+      let parsedDate;
+      if (typeof transaction.date === 'string') {
+        // Handle date string format (e.g., "2025-08-28")
+        if (transaction.date.includes('-')) {
+          const [year, month, day] = transaction.date.split('-').map(Number);
+          parsedDate = new Date(year, month - 1, day, 12, 0, 0);
+        } else {
+          // Handle ISO string format (e.g., "2025-08-28T00:00:00.000Z")
+          parsedDate = new Date(transaction.date);
+        }
+      } else {
+        parsedDate = new Date(transaction.date);
+      }
+      
+      const date = parsedDate.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
       })
+      
       if (!groups[date]) {
         groups[date] = {
           date,

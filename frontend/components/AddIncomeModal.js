@@ -98,7 +98,9 @@ export default function AddIncomeModal() {
       } else if (transaction.date) {
         // Handle different date formats from backend
         if (typeof transaction.date === 'string') {
-          transactionDate = new Date(transaction.date);
+          // Parse the date string as local date to avoid timezone issues
+          const [year, month, day] = transaction.date.split('-').map(Number);
+          transactionDate = new Date(year, month - 1, day); // month is 0-indexed
         } else if (transaction.date instanceof Date) {
           transactionDate = transaction.date;
         }
@@ -153,7 +155,11 @@ export default function AddIncomeModal() {
   }, [accounts, selectedAccount]);
 
   const handleClose = () => {
-    navigation.goBack()
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Home');
+    }
   }
 
   const handleSave = async () => {
@@ -208,7 +214,11 @@ export default function AddIncomeModal() {
         console.log('✅ Create response:', res);
       }
       console.log('✅ Transaction saved successfully');
-      navigation.goBack();
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Home');
+      }
     } catch (error) {
       console.error('❌ Error saving transaction:', error);
       console.error('❌ Error response:', error.response?.data);
