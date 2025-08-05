@@ -33,8 +33,16 @@ const CategoryMapping = require('./CategoryMapping')(sequelize);
 const RecurringRule = require('./RecurringRule')(sequelize);
 
 // Define associations
-Account.hasMany(Transaction, { foreignKey: 'account_id', as: 'transactions' });
-Transaction.belongsTo(Account, { foreignKey: 'account_id', as: 'account' });
+Account.hasMany(Transaction, { 
+  foreignKey: 'account_id', 
+  sourceKey: 'account_id',
+  as: 'transactions' 
+});
+Transaction.belongsTo(Account, { 
+  foreignKey: 'account_id', 
+  targetKey: 'account_id',
+  as: 'account' 
+});
 
 PlaidItem.hasMany(Account, { foreignKey: 'plaid_item_id', as: 'accounts' });
 Account.belongsTo(PlaidItem, { foreignKey: 'plaid_item_id', as: 'plaid_item' });
