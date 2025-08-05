@@ -3,8 +3,8 @@ const { Op } = require('sequelize');
 const moment = require('moment');
 const router = express.Router();
 
-// Import models
-const { Transaction, Account, CategoryMapping } = require('../models');
+// Import models and sequelize
+const { Transaction, Account, CategoryMapping, sequelize } = require('../models');
 
 /**
  * GET /api/transactions
@@ -119,23 +119,107 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
     
+    console.log('🔄 Updating transaction:', id);
+    console.log('📊 Update data:', updateData);
+    console.log('🔍 Account ID being sent:', updateData.account_id);
+    console.log('🔍 Account ID type:', typeof updateData.account_id);
+    
     const transaction = await Transaction.findByPk(id);
     if (!transaction) {
+      console.log('❌ Transaction not found:', id);
       return res.status(404).json({
         success: false,
         error: 'Transaction not found'
       });
     }
     
+    console.log('✅ Found transaction:', transaction.id);
+    console.log('📝 Current transaction data:', {
+      account_id: transaction.account_id,
+      account_id_type: typeof transaction.account_id,
+      amount: transaction.amount,
+      category: transaction.category,
+      date: transaction.date
+    });
+    
+    // Validate and format update data
+    const formattedUpdateData = {
+      ...updateData,
+      amount: updateData.amount ? parseFloat(updateData.amount) : transaction.amount,
+      date: updateData.date ? new Date(updateData.date) : transaction.date,
+      account_id: updateData.account_id ? String(updateData.account_id) : transaction.account_id
+    };
+    
+    console.log('📝 Formatted update data:', formattedUpdateData);
+    console.log('🔍 Formatted account_id:', formattedUpdateData.account_id);
+    console.log('🔍 Formatted account_id type:', typeof formattedUpdateData.account_id);
+    console.log('🔍 Original transaction data:', {
+      transaction_id: transaction.transaction_id,
+      account_id: transaction.account_id,
+      date: transaction.date,
+      amount: transaction.amount
+    });
+    
+    // Check if we're changing any unique constraint fields
+    const constraintFieldsChanged = 
+      formattedUpdateData.transaction_id !== transaction.transaction_id ||
+      formattedUpdateData.account_id !== transaction.account_id ||
+      formattedUpdateData.date.getTime() !== transaction.date.getTime() ||
+      formattedUpdateData.amount !== transaction.amount;
+    
+    console.log('🔍 Unique constraint fields changed:', constraintFieldsChanged);
+    
+    if (constraintFieldsChanged) {
+      console.log('⚠️ Warning: Unique constraint fields are being changed');
+    }
+    
     // Update transaction
-    await transaction.update(updateData);
+    try {
+      console.log('🔄 About to update transaction with data:', formattedUpdateData);
+      
+      // Simple update without transaction wrapper first
+      const updatedTransaction = await transaction.update(formattedUpdateData);
+      console.log('✅ Transaction updated successfully');
+      console.log('✅ Updated transaction data:', {
+        id: updatedTransaction.id,
+        account_id: updatedTransaction.account_id,
+        amount: updatedTransaction.amount,
+        category: updatedTransaction.category,
+        date: updatedTransaction.date,
+        details: updatedTransaction.details
+      });
+      
+      // Verify the update by fetching the transaction again
+      const verifyTransaction = await Transaction.findByPk(id);
+      console.log('✅ Verification - fetched transaction:', {
+        id: verifyTransaction.id,
+        account_id: verifyTransaction.account_id,
+        amount: verifyTransaction.amount,
+        category: verifyTransaction.category,
+        date: verifyTransaction.date,
+        details: verifyTransaction.details
+      });
+      
+    } catch (updateError) {
+      console.error('❌ Error during transaction.update():', updateError);
+      console.error('❌ Update error details:', {
+        message: updateError.message,
+        name: updateError.name,
+        stack: updateError.stack
+      });
+      throw updateError;
+    }
     
     res.json({
       success: true,
       transaction: transaction
     });
   } catch (error) {
-    console.error('Error updating transaction:', error);
+    console.error('❌ Error updating transaction:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       success: false,
       error: 'Failed to update transaction',
@@ -323,6 +407,33 @@ router.get('/summary', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch transaction summary',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/transactions/schema
+ * Debug endpoint to check database schema
+ */
+router.get('/schema', async (req, res) => {
+  try {
+    const [results] = await sequelize.query(`
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns 
+      WHERE table_name = 'transactions' 
+      ORDER BY ordinal_position;
+    `);
+    
+    res.json({
+      success: true,
+      schema: results
+    });
+  } catch (error) {
+    console.error('Error fetching schema:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch schema',
       message: error.message
     });
   }
