@@ -100,67 +100,116 @@ export default function AddExpenseModal() {
       }
       setDate(transactionDate);
       
-      if (transaction.account_id && accounts.length > 0) {
-        const found = accounts.find(acc => acc.account_id === transaction.account_id);
-        setSelectedAccount(found ? { account_id: found.account_id, name: found.name } : null);
+      // Set selectedAccount immediately if we have the account_id
+      if (transaction.account_id) {
+        console.log('🔍 Setting selectedAccount from transaction:', transaction.account_id);
+        // If accounts are already loaded, find the matching account
+        if (accounts.length > 0) {
+          const found = accounts.find(acc => acc.account_id === transaction.account_id);
+          if (found) {
+            console.log('🔍 Found matching account:', found.name);
+            setSelectedAccount({ account_id: found.account_id, name: found.name });
+          } else {
+            console.log('🔍 No matching account found, creating placeholder');
+            setSelectedAccount({ account_id: transaction.account_id, name: 'Unknown Account' });
+          }
+        } else {
+          // If accounts aren't loaded yet, create a placeholder
+          console.log('🔍 Accounts not loaded yet, creating placeholder');
+          setSelectedAccount({ account_id: transaction.account_id, name: 'Loading...' });
+        }
       } else {
+        console.log('🔍 No account_id in transaction');
         setSelectedAccount(null);
       }
     } else {
       setDate(new Date());
       setIsTransfer(false);
       setRecurring(false);
+      setSelectedAccount(null);
     }
   }, [transaction, accounts]);
+
+  // Update selectedAccount name when accounts are loaded
+  useEffect(() => {
+    if (selectedAccount && selectedAccount.account_id && accounts.length > 0) {
+      const found = accounts.find(acc => acc.account_id === selectedAccount.account_id);
+      if (found && found.name !== selectedAccount.name) {
+        console.log('🔍 Updating selectedAccount name:', found.name);
+        setSelectedAccount({ account_id: found.account_id, name: found.name });
+      }
+    }
+  }, [accounts, selectedAccount]);
 
   const handleClose = () => {
     navigation.goBack()
   }
 
   const handleSave = async () => {
-    if (!amount || !category || !account) {
+    if (!amount || !category || !selectedAccount) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
+    // Ensure we have valid data
+    const details = merchant !== 'Select Merchant' ? merchant : (notes || 'Expense Transaction');
+    const transactionAmount = parseFloat(amount);
+    
+    if (isNaN(transactionAmount) || transactionAmount <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    // Get the correct account_id - always use Plaid account ID, not database ID
+    const accountId = selectedAccount?.account_id || transaction?.account_id;
+
     const transactionData = {
-      amount: parseFloat(amount),
+      amount: transactionAmount,
       category: category,
       app_category: category,
       date: date.toISOString().split('T')[0],
-      details: merchant !== 'Select Merchant' ? merchant : notes,
-      notes: notes,
+      details: details,
+      notes: notes || '',
       transaction_type: 'Debit',
-      account_id: parseInt(account),
-      bank: 'Tangerine - Personal',
-      statement_type: 'Checking',
+      account_id: accountId,
+      is_recurring: recurring,
     };
 
-    try {
-      console.log('Transaction data:', transactionData);
-    } catch (err) {
-      console.error('Error constructing transactionData:', err);
-      alert('Error constructing transactionData: ' + err.message);
-      return;
-    }
-    console.log('Before try');
+    console.log('📊 Transaction data being sent:', transactionData);
+
     try {
       if (transaction?.id) {
-        const res = await transactionService.updateTransaction(transaction.id, transactionData);
-        console.log('Update response:', res);
+        console.log('🔄 Updating existing transaction:', transaction.id);
+        console.log('🔍 Transaction object:', transaction);
+        console.log('🔍 Using ID type:', typeof transaction.id);
+        
+        // Ensure we're using the database ID, not the Plaid transaction_id
+        const transactionId = typeof transaction.id === 'number' ? transaction.id : 
+                            (transaction.database_id || transaction.id);
+        
+        console.log('🔍 Final transaction ID to use:', transactionId);
+        
+        const res = await transactionService.updateTransaction(transactionId, transactionData);
+        console.log('✅ Update response:', res);
       } else {
+        console.log('🆕 Creating new transaction');
         const res = await transactionService.createTransaction(transactionData);
-        console.log('Create response:', res);
+        console.log('✅ Create response:', res);
       }
-      console.log('After try, before navigation');
+      console.log('✅ Transaction saved successfully');
       navigation.goBack();
-      console.log('After navigation');
     } catch (error) {
-      console.error('Error saving transaction:', error);
-      alert('Error saving transaction: ' + (error?.response?.data?.detail || error.message));
-      console.log('After catch');
+      console.error('❌ Error saving transaction:', error);
+      console.error('❌ Error response:', error.response?.data);
+      console.error('❌ Error status:', error.response?.status);
+      
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          error.message || 
+                          'Unknown error occurred';
+      
+      Alert.alert('Error', `Failed to save transaction: ${errorMessage}`);
     }
-    console.log('After try/catch');
 
     if (alwaysRecurring && merchant && merchant !== 'Select Merchant') {
       setSavingRule(true);
