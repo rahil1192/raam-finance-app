@@ -16,26 +16,78 @@ const FILTERS = [
 ]
 
 const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialMonthData, onBack, allTransactions = [], monthsData = {} }) => {
+  // Generate complete list of months from January 2025 to current month
+  const generateCompleteMonthsData = () => {
+    const completeMonthsData = { ...monthsData };
+    const startDate = new Date(2025, 0, 1); // January 2025
+    const currentDate = new Date();
+    const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1); // First day of current month
+    
+    let currentMonth = new Date(startDate);
+    
+    while (currentMonth <= endDate) {
+      const monthKey = currentMonth.toLocaleString("default", { month: "long" }) + " " + currentMonth.getFullYear();
+      if (!completeMonthsData[monthKey]) {
+        completeMonthsData[monthKey] = { income: 0, expenses: 0, transactions: [] };
+      }
+      currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+    
+    return completeMonthsData;
+  };
+
   // Fallback: if monthsData is empty or invalid, create a single-entry monthsData/monthsList for the current month
   let fallbackMonth = initialSelectedMonth
   let fallbackMonthData = initialMonthData
-  let fallbackMonthsData = monthsData
-  if (!monthsData || typeof monthsData !== 'object' || Object.keys(monthsData).length === 0) {
-    fallbackMonth = initialSelectedMonth || (new Date()).toLocaleString("default", { month: "long", year: "numeric" })
-    fallbackMonthData = initialMonthData
-    fallbackMonthsData = { [fallbackMonth]: fallbackMonthData }
-  }
+  let fallbackMonthsData = generateCompleteMonthsData()
+  
+  // Helper function to parse month and year
+  const parseMonthYear = (monthYearStr) => {
+    const [month, year] = monthYearStr.split(' ');
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const monthIndex = monthNames.indexOf(month);
+    return { monthIndex, year: parseInt(year) };
+  };
+
   const monthsList = Object.keys(fallbackMonthsData)
     .sort((a, b) => {
-      // Parse 'June 2025' into a date for sorting
-      const [monthA, yearA] = a.split(' ');
-      const [monthB, yearB] = b.split(' ');
-      const dateA = new Date(`${monthA} 1, ${yearA}`);
-      const dateB = new Date(`${monthB} 1, ${yearB}`);
-      return dateB - dateA; // reverse order: latest month first
+      const dateA = parseMonthYear(a);
+      const dateB = parseMonthYear(b);
+      
+      // Compare years first, then months
+      if (dateA.year !== dateB.year) {
+        return dateA.year - dateB.year;
+      }
+      return dateA.monthIndex - dateB.monthIndex;
     });
   let initialIndex = monthsList.findIndex(m => m === fallbackMonth)
   if (initialIndex === -1) initialIndex = monthsList.length - 1
+
+  // Add safety checks for empty monthsList
+  if (monthsList.length === 0) {
+    console.warn('CashFlowPage: No months data available, showing empty state');
+    return (
+      <View style={{ flex: 1, backgroundColor: "#0f172a", justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: '#e2e8f0', fontSize: 16 }}>No transaction data available</Text>
+      </View>
+    );
+  }
+
+  // Ensure initialIndex is within bounds
+  if (initialIndex < 0 || initialIndex >= monthsList.length) {
+    console.warn('CashFlowPage: Invalid initialIndex, using 0');
+    initialIndex = 0;
+  }
+
+  console.log('CashFlowPage Debug:', {
+    initialSelectedMonth,
+    monthsList,
+    initialIndex,
+    fallbackMonthsData: Object.keys(fallbackMonthsData)
+  });
 
   // Define action types
   const ACTIONS = {
@@ -196,6 +248,14 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
 
   // Update handlers
   const handleMonthChange = (newIndex) => {
+    console.log('CashFlowPage handleMonthChange:', {
+      currentIndex: state.monthIndex,
+      newIndex: newIndex,
+      currentMonth: monthsList[state.monthIndex],
+      newMonth: monthsList[newIndex],
+      totalMonths: monthsList.length,
+      monthsList: monthsList
+    });
     dispatch({ type: ACTIONS.SET_MONTH, payload: newIndex });
   };
 
@@ -463,12 +523,6 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
         break;
       }
     }
-
-    console.log('Final chart data:', {
-      labels,
-      points,
-      selectedIndex: state.filterType === 'Weekly' ? weeksToShow - 1 : -1
-    });
 
     return { 
       labels, 
@@ -792,21 +846,22 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
 
       {/* Month/Week Navigation */}
       <View style={styles.monthNavigation}>
-        {/* Left arrow (older period) */}
+        {/* Left arrow (previous month) */}
         <TouchableOpacity 
-          disabled={(state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') ? false : state.monthIndex >= monthsList.length - 1} 
+          disabled={(state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') ? false : state.monthIndex <= 0} 
           onPress={() => {
             if (state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') {
               handlePeriodNavigation('prev');
-            } else if (state.monthIndex < monthsList.length - 1) {
-              handleMonthChange(state.monthIndex + 1);
+            } else if (state.monthIndex > 0) {
+              // Go to previous month (lower index since monthsList is sorted oldest first)
+              handleMonthChange(state.monthIndex - 1);
             }
           }}
         >
           <Ionicons 
             name="chevron-back" 
             size={24} 
-            color={(state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') ? "#e2e8f0" : (state.monthIndex >= monthsList.length - 1 ? "#334155" : "#e2e8f0")} 
+            color={(state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') ? "#e2e8f0" : (state.monthIndex <= 0 ? "#334155" : "#e2e8f0")} 
           />
         </TouchableOpacity>
         <View style={styles.monthInfo}>
@@ -821,21 +876,22 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
             </Text>
           )}
         </View>
-        {/* Right arrow (newer period) */}
+        {/* Right arrow (next month) */}
         <TouchableOpacity 
-          disabled={(state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') ? false : state.monthIndex <= 0} 
+          disabled={(state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') ? false : state.monthIndex >= monthsList.length - 1} 
           onPress={() => {
             if (state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') {
               handlePeriodNavigation('next');
-            } else if (state.monthIndex > 0) {
-              handleMonthChange(state.monthIndex - 1);
+            } else if (state.monthIndex < monthsList.length - 1) {
+              // Go to next month (higher index since monthsList is sorted oldest first)
+              handleMonthChange(state.monthIndex + 1);
             }
           }}
         >
           <Ionicons 
             name="chevron-forward" 
             size={24} 
-            color={(state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') ? "#e2e8f0" : (state.monthIndex <= 0 ? "#334155" : "#e2e8f0")} 
+            color={(state.filterType === 'Weekly' || state.filterType === 'Bi-Weekly') ? "#e2e8f0" : (state.monthIndex >= monthsList.length - 1 ? "#334155" : "#e2e8f0")} 
           />
         </TouchableOpacity>
       </View>
@@ -912,13 +968,6 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
               )}
             </View>
           </View>
-          {/* Add Balance (Overall) below the main balance */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
-            <Text style={[styles.balanceLabel, { fontSize: 14 }]}>Balance (Overall)</Text>
-            <Text style={[styles.balanceNegative, actualBalance >= 0 ? styles.positive : styles.negative, { fontSize: 14 }]}>
-              {actualBalance >= 0 ? "+" : "-"} ${Math.abs(actualBalance).toFixed(2)}
-            </Text>
-          </View>
         </View>
 
         {/* Income/Expense Breakdown */}
@@ -955,12 +1004,6 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
               <Text style={styles.balanceSummaryLabel}>Balance</Text>
               <Text style={[styles.balanceSummaryNegative, actualBalance >= 0 ? styles.positive : styles.negative]}>
                 {actualBalance >= 0 ? "+" : "-"} ${Math.abs(actualBalance).toFixed(2)}
-              </Text>
-            </View>
-            <View style={styles.balanceSummaryItem}>
-              <Text style={styles.balanceSummaryLabel}>Balance (Overall)</Text>
-              <Text style={[styles.balanceSummaryNegative, overallBalance >= 0 ? styles.positive : styles.negative]}>
-                {overallBalance >= 0 ? "+" : "-"} ${Math.abs(overallBalance).toFixed(2)}
               </Text>
             </View>
           </View>

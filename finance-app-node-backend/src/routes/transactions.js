@@ -5,6 +5,7 @@ const router = express.Router();
 
 // Import models and sequelize
 const { Transaction, Account, CategoryMapping, sequelize } = require('../models');
+const { mapPlaidCategoryToAppCategory } = require('../config/categoryMapping');
 
 /**
  * GET /api/transactions
@@ -89,9 +90,21 @@ router.post('/', async (req, res) => {
       });
     }
     
-    // Create transaction
+    // Apply category mapping if category is provided
+    let mappedCategory = transactionData.category;
+    let appCategory = transactionData.app_category;
+    
+    if (transactionData.category) {
+      // Map Plaid category to app category
+      appCategory = mapPlaidCategoryToAppCategory(transactionData.category);
+      console.log(`🔍 Category mapping: "${transactionData.category}" -> "${appCategory}"`);
+    }
+    
+    // Create transaction with mapped categories
     const transaction = await Transaction.create({
       ...transactionData,
+      category: mappedCategory, // Keep original Plaid category
+      app_category: appCategory, // Store mapped app category
       date: new Date(transactionData.date),
       amount: parseFloat(transactionData.amount)
     });
@@ -149,6 +162,14 @@ router.put('/:id', async (req, res) => {
       date: updateData.date ? new Date(updateData.date) : transaction.date,
       account_id: updateData.account_id ? String(updateData.account_id) : transaction.account_id
     };
+    
+    // Apply category mapping if category is being updated
+    if (updateData.category) {
+      const appCategory = mapPlaidCategoryToAppCategory(updateData.category);
+      formattedUpdateData.category = updateData.category; // Keep original Plaid category
+      formattedUpdateData.app_category = appCategory; // Store mapped app category
+      console.log(`🔍 Category mapping: "${updateData.category}" -> "${appCategory}"`);
+    }
     
     console.log('📝 Formatted update data:', formattedUpdateData);
     console.log('🔍 Formatted account_id:', formattedUpdateData.account_id);
@@ -413,27 +434,84 @@ router.get('/summary', async (req, res) => {
 });
 
 /**
- * GET /api/transactions/schema
- * Debug endpoint to check database schema
+ * POST /api/transactions/sync-plaid
+ * Sync transactions from Plaid with automatic category mapping
  */
-router.get('/schema', async (req, res) => {
+router.post('/sync-plaid', async (req, res) => {
   try {
-    const [results] = await sequelize.query(`
-      SELECT column_name, data_type, is_nullable, column_default
-      FROM information_schema.columns 
-      WHERE table_name = 'transactions' 
-      ORDER BY ordinal_position;
-    `);
+    const { transactions } = req.body;
+    
+    if (!transactions || !Array.isArray(transactions)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid transactions array'
+      });
+    }
+    
+    console.log(`🔄 Syncing ${transactions.length} Plaid transactions`);
+    
+    const syncedTransactions = [];
+    const errors = [];
+    
+    for (const plaidTransaction of transactions) {
+      try {
+        // Map Plaid category to app category
+        const appCategory = mapPlaidCategoryToAppCategory(plaidTransaction.category);
+        
+        console.log(`🔍 Mapping: "${plaidTransaction.category}" -> "${appCategory}"`);
+        
+        // Check if transaction already exists
+        const existingTransaction = await Transaction.findOne({
+          where: {
+            transaction_id: plaidTransaction.transaction_id,
+            account_id: plaidTransaction.account_id
+          }
+        });
+        
+        if (existingTransaction) {
+          console.log(`⏭️ Transaction already exists: ${plaidTransaction.transaction_id}`);
+          continue;
+        }
+        
+        // Create new transaction with mapped category
+        const transaction = await Transaction.create({
+          transaction_id: plaidTransaction.transaction_id,
+          account_id: plaidTransaction.account_id,
+          date: new Date(plaidTransaction.date),
+          details: plaidTransaction.name,
+          amount: Math.abs(plaidTransaction.amount),
+          category: plaidTransaction.category, // Original Plaid category
+          app_category: appCategory, // Mapped app category
+          transaction_type: plaidTransaction.amount > 0 ? 'Credit' : 'Debit',
+          notes: plaidTransaction.notes || '',
+          is_recurring: false
+        });
+        
+        syncedTransactions.push(transaction);
+        console.log(`✅ Synced transaction: ${plaidTransaction.transaction_id}`);
+        
+      } catch (error) {
+        console.error(`❌ Error syncing transaction ${plaidTransaction.transaction_id}:`, error);
+        errors.push({
+          transaction_id: plaidTransaction.transaction_id,
+          error: error.message
+        });
+      }
+    }
     
     res.json({
       success: true,
-      schema: results
+      synced_count: syncedTransactions.length,
+      error_count: errors.length,
+      errors: errors,
+      message: `Successfully synced ${syncedTransactions.length} transactions`
     });
+    
   } catch (error) {
-    console.error('Error fetching schema:', error);
+    console.error('Error syncing Plaid transactions:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch schema',
+      error: 'Failed to sync Plaid transactions',
       message: error.message
     });
   }

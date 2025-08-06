@@ -1,14 +1,39 @@
 const express = require('express');
 const router = express.Router();
-
-// Import models
-const { CategoryMapping, Transaction } = require('../models');
+const { CategoryMapping } = require('../models');
+const { 
+  CATEGORY_MAPPING, 
+  getAppCategories, 
+  getPlaidCategoriesForAppCategory,
+  mapPlaidCategoryToAppCategory 
+} = require('../config/categoryMapping');
 
 /**
- * GET /api/category_mappings
- * Get all category mappings
+ * GET /api/categories
+ * Get all available app categories
  */
 router.get('/', async (req, res) => {
+  try {
+    const categories = getAppCategories();
+    res.json({
+      success: true,
+      categories: categories
+    });
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch categories',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/categories/mappings
+ * Get all category mappings
+ */
+router.get('/mappings', async (req, res) => {
   try {
     const mappings = await CategoryMapping.findAll({
       order: [['plaid_category', 'ASC']]
@@ -16,11 +41,7 @@ router.get('/', async (req, res) => {
     
     res.json({
       success: true,
-      mappings: mappings.map(mapping => ({
-        id: mapping.id,
-        plaid_category: mapping.plaid_category,
-        app_category: mapping.app_category
-      }))
+      mappings: mappings
     });
   } catch (error) {
     console.error('Error fetching category mappings:', error);
@@ -33,36 +54,42 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * POST /api/category_mappings
- * Create or update a category mapping
+ * POST /api/categories/mappings
+ * Create a new category mapping
  */
-router.post('/', async (req, res) => {
+router.post('/mappings', async (req, res) => {
   try {
     const { plaid_category, app_category } = req.body;
     
     if (!plaid_category || !app_category) {
       return res.status(400).json({
         success: false,
-        error: 'Both plaid_category and app_category are required'
+        error: 'Missing required fields',
+        message: 'plaid_category and app_category are required'
       });
     }
     
-    const [mapping, created] = await CategoryMapping.findOrCreate({
-      where: { plaid_category },
-      defaults: { app_category }
+    // Check if mapping already exists
+    const existingMapping = await CategoryMapping.findOne({
+      where: { plaid_category }
     });
     
-    if (!created) {
-      await mapping.update({ app_category });
+    if (existingMapping) {
+      return res.status(409).json({
+        success: false,
+        error: 'Mapping already exists',
+        message: `A mapping for "${plaid_category}" already exists`
+      });
     }
     
-    res.json({
+    const mapping = await CategoryMapping.create({
+      plaid_category,
+      app_category
+    });
+    
+    res.status(201).json({
       success: true,
-      mapping: {
-        id: mapping.id,
-        plaid_category: mapping.plaid_category,
-        app_category: mapping.app_category
-      }
+      mapping: mapping
     });
   } catch (error) {
     console.error('Error creating category mapping:', error);
@@ -75,28 +102,59 @@ router.post('/', async (req, res) => {
 });
 
 /**
- * DELETE /api/category_mappings
- * Delete a category mapping
+ * PUT /api/categories/mappings/:id
+ * Update a category mapping
  */
-router.delete('/', async (req, res) => {
+router.put('/mappings/:id', async (req, res) => {
   try {
-    const { plaid_category } = req.query;
+    const { id } = req.params;
+    const { app_category } = req.body;
     
-    if (!plaid_category) {
+    if (!app_category) {
       return res.status(400).json({
         success: false,
-        error: 'plaid_category is required'
+        error: 'Missing required field',
+        message: 'app_category is required'
       });
     }
     
-    const mapping = await CategoryMapping.findOne({
-      where: { plaid_category }
-    });
-    
+    const mapping = await CategoryMapping.findByPk(id);
     if (!mapping) {
       return res.status(404).json({
         success: false,
-        error: 'Category mapping not found'
+        error: 'Mapping not found'
+      });
+    }
+    
+    await mapping.update({ app_category });
+    
+    res.json({
+      success: true,
+      mapping: mapping
+    });
+  } catch (error) {
+    console.error('Error updating category mapping:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update category mapping',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * DELETE /api/categories/mappings/:id
+ * Delete a category mapping
+ */
+router.delete('/mappings/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const mapping = await CategoryMapping.findByPk(id);
+    if (!mapping) {
+      return res.status(404).json({
+        success: false,
+        error: 'Mapping not found'
       });
     }
     
@@ -117,92 +175,59 @@ router.delete('/', async (req, res) => {
 });
 
 /**
- * POST /api/category_mappings/backfill
- * Backfill app_category for existing transactions
+ * POST /api/categories/map
+ * Map a Plaid category to an app category
  */
-router.post('/backfill', async (req, res) => {
+router.post('/map', async (req, res) => {
   try {
-    const transactions = await Transaction.findAll({
-      where: {
-        app_category: 'Other'
-      }
-    });
+    const { plaid_category } = req.body;
     
-    let updatedCount = 0;
-    
-    for (const transaction of transactions) {
-      if (transaction.category && transaction.category !== 'Uncategorized') {
-        const mapping = await CategoryMapping.findOne({
-          where: { plaid_category: transaction.category }
-        });
-        
-        if (mapping) {
-          await transaction.update({ app_category: mapping.app_category });
-          updatedCount++;
-        }
-      }
+    if (!plaid_category) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field',
+        message: 'plaid_category is required'
+      });
     }
+    
+    const app_category = mapPlaidCategoryToAppCategory(plaid_category);
     
     res.json({
       success: true,
-      message: `Updated app_category for ${updatedCount} transactions`
+      plaid_category,
+      app_category,
+      message: `Mapped "${plaid_category}" to "${app_category}"`
     });
   } catch (error) {
-    console.error('Error backfilling categories:', error);
+    console.error('Error mapping category:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to backfill categories',
+      error: 'Failed to map category',
       message: error.message
     });
   }
 });
 
 /**
- * GET /api/category_mappings/stats
- * Get category mapping statistics
+ * GET /api/categories/plaid/:app_category
+ * Get all Plaid categories that map to a specific app category
  */
-router.get('/stats', async (req, res) => {
+router.get('/plaid/:app_category', async (req, res) => {
   try {
-    const totalMappings = await CategoryMapping.count();
-    const totalTransactions = await Transaction.count();
-    const categorizedTransactions = await Transaction.count({
-      where: {
-        app_category: {
-          [require('sequelize').Op.ne]: 'Other'
-        }
-      }
-    });
+    const { app_category } = req.params;
     
-    // Get category distribution
-    const categoryStats = await Transaction.findAll({
-      attributes: [
-        'app_category',
-        [require('sequelize').fn('COUNT', require('sequelize').col('id')), 'count'],
-        [require('sequelize').fn('SUM', require('sequelize').col('amount')), 'total_amount']
-      ],
-      group: ['app_category'],
-      order: [[require('sequelize').fn('COUNT', require('sequelize').col('id')), 'DESC']]
-    });
+    const plaidCategories = getPlaidCategoriesForAppCategory(app_category);
     
     res.json({
       success: true,
-      stats: {
-        total_mappings: totalMappings,
-        total_transactions: totalTransactions,
-        categorized_transactions: categorizedTransactions,
-        categorization_rate: totalTransactions > 0 ? (categorizedTransactions / totalTransactions * 100).toFixed(2) : 0,
-        category_distribution: categoryStats.map(stat => ({
-          category: stat.app_category,
-          count: parseInt(stat.dataValues.count),
-          total_amount: parseFloat(stat.dataValues.total_amount || 0)
-        }))
-      }
+      app_category,
+      plaid_categories: plaidCategories
     });
   } catch (error) {
-    console.error('Error fetching category stats:', error);
+    console.error('Error fetching Plaid categories:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch category stats',
+      error: 'Failed to fetch Plaid categories',
       message: error.message
     });
   }

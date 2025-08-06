@@ -221,7 +221,7 @@ export default function CategoriesTab({ transactions: propTransactions, selected
         id: transaction.id,
         name: transaction.merchant || transaction.details,
         amount: transaction.amount,
-        category: transaction.category,
+        category: transaction.app_category || transaction.category,
         date: transaction.date,
         notes: transaction.notes || "",
         transaction_type: transaction.transaction_type,

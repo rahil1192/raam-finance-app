@@ -63,7 +63,7 @@ export default function DailyTab({ transactions: propTransactions }) {
         }
       }
       const amount = transaction.transaction_type === "Debit" ? -Math.abs(transaction.amount) : Math.abs(transaction.amount)
-      const displayCategory = transaction.app_category || "Other"
+      const displayCategory = transaction.app_category || transaction.category || "Other"
       groups[date].transactions.push({
         id: transaction.id,
         name: transaction.details,
