@@ -85,6 +85,7 @@ export default function AddExpenseModal() {
     
     setIsTransfer(isTransferTransaction);
     setRecurring(transaction.is_recurring || false);
+    setRecurrence(transaction.recurrence_pattern || 'none');
     
     // Fix date handling for existing transactions
     let transactionDate = new Date();

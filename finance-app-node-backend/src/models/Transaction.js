@@ -62,6 +62,11 @@ module.exports = (sequelize) => {
     is_recurring: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
+    },
+    recurrence_pattern: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Recurrence pattern: none, daily, weekly, bi-weekly, monthly, bi-monthly, annually, custom'
     }
   }, {
     tableName: 'transactions',

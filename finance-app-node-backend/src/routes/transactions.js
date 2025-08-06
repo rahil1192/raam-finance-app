@@ -60,6 +60,7 @@ router.get('/', async (req, res) => {
         statement_type: t.statement_type,
         notes: t.notes,
         is_recurring: t.is_recurring,
+        recurrence_pattern: t.recurrence_pattern,
         account: t.account
       }))
     });
@@ -218,7 +219,8 @@ router.put('/:id', async (req, res) => {
         amount: verifyTransaction.amount,
         category: verifyTransaction.category,
         date: verifyTransaction.date,
-        details: verifyTransaction.details
+        details: verifyTransaction.details,
+        recurrence_pattern: verifyTransaction.recurrence_pattern
       });
       
     } catch (updateError) {
