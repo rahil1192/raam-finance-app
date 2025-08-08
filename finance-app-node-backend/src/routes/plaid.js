@@ -6,6 +6,9 @@ const router = express.Router();
 // Import models
 const { PlaidItem, Account, Transaction, CategoryMapping } = require('../models');
 
+// Import category mapping utility
+const { mapTransactionCategory } = require('../utils/categoryMapper');
+
 // Initialize Plaid client
 console.log('Initializing Plaid client with:');
 console.log('PLAID_ENV:', process.env.PLAID_ENV);
@@ -58,7 +61,7 @@ router.post('/create_link_token', async (req, res) => {
       },
       client_name: 'Finance App',
       products: ['transactions'],
-      country_codes: ['US'],
+      country_codes: ['US','CA'],
       language: 'en',
     };
 
@@ -298,16 +301,8 @@ router.post('/fetch_transactions', async (req, res) => {
             });
 
             if (!existingTransaction) {
-              // Find category mapping
-              let appCategory = 'Other';
-              if (plaidTransaction.category && plaidTransaction.category.length > 0) {
-                const categoryMapping = await CategoryMapping.findOne({
-                  where: { plaid_category: plaidTransaction.category[0] }
-                });
-                if (categoryMapping) {
-                  appCategory = categoryMapping.app_category;
-                }
-              }
+              // Use the utility to map the transaction category
+              const appCategory = await mapTransactionCategory(plaidTransaction);
 
               // Create transaction
               await Transaction.create({
@@ -875,15 +870,8 @@ router.post('/sync_transactions', async (req, res) => {
           // Process added transactions
           for (const transaction of added) {
             try {
-              let appCategory = 'Other';
-              if (transaction.category && transaction.category.length > 0) {
-                const categoryMapping = await CategoryMapping.findOne({
-                  where: { plaid_category: transaction.category[0] }
-                });
-                if (categoryMapping) {
-                  appCategory = categoryMapping.app_category;
-                }
-              }
+              // Use the utility to map the transaction category
+              const appCategory = await mapTransactionCategory(transaction);
 
               await Transaction.create({
                 transaction_id: transaction.transaction_id,
@@ -971,16 +959,8 @@ router.post('/sync_transactions', async (req, res) => {
               });
 
               if (!existingTransaction) {
-                // Find category mapping
-                let appCategory = 'Other';
-                if (plaidTransaction.category && plaidTransaction.category.length > 0) {
-                  const categoryMapping = await CategoryMapping.findOne({
-                    where: { plaid_category: plaidTransaction.category[0] }
-                  });
-                  if (categoryMapping) {
-                    appCategory = categoryMapping.app_category;
-                  }
-                }
+                // Use the utility to map the transaction category
+                const appCategory = await mapTransactionCategory(plaidTransaction);
 
                 // Create transaction
                 await Transaction.create({
