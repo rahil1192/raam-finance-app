@@ -6,6 +6,7 @@ const router = express.Router();
 // Import models and sequelize
 const { Transaction, Account, CategoryMapping, sequelize } = require('../models');
 const { mapPlaidCategoryToAppCategory } = require('../config/categoryMapping');
+const MerchantCategoryRule = require('../models/MerchantCategoryRule'); // Added import for MerchantCategoryRule
 
 /**
  * @swagger
@@ -891,6 +892,378 @@ router.post('/sync-plaid', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to sync Plaid transactions',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /transactions/update-merchant-category:
+ *   post:
+ *     summary: Bulk update transactions by merchant name and create rule for future transactions
+ *     description: Updates all existing transactions with a specific merchant name to a new category and creates a rule for future transactions
+ *     tags: [Transactions]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - merchant_name
+ *               - new_category
+ *             properties:
+ *               merchant_name:
+ *                 type: string
+ *                 description: The merchant name to match (case insensitive)
+ *                 example: "UBER CANADA/UBEREATS"
+ *               new_category:
+ *                 type: string
+ *                 description: The new category to assign
+ *                 example: "Restaurants & Bars"
+ *               exact_match:
+ *                 type: boolean
+ *                 description: Whether to use exact match or partial match
+ *                 default: false
+ *     responses:
+ *       200:
+ *         description: Transactions updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 updated_count:
+ *                   type: integer
+ *                 rule_created:
+ *                   type: boolean
+ *       400:
+ *         description: Bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post('/update-merchant-category', async (req, res) => {
+  try {
+    const { merchant_name, new_category, exact_match = false } = req.body;
+    
+    if (!merchant_name || !new_category) {
+      return res.status(400).json({
+        success: false,
+        error: 'Merchant name and new category are required'
+      });
+    }
+
+    console.log(`🔄 Updating merchant category: "${merchant_name}" → "${new_category}"`);
+
+    // Build the WHERE clause for merchant matching
+    let whereClause;
+    if (exact_match) {
+      whereClause = {
+        [Op.or]: [
+          { notes: { [Op.iLike]: merchant_name } },
+          { details: { [Op.iLike]: merchant_name } }
+        ]
+      };
+    } else {
+      whereClause = {
+        [Op.or]: [
+          { notes: { [Op.iLike]: `%${merchant_name}%` } },
+          { details: { [Op.iLike]: `%${merchant_name}%` } }
+        ]
+      };
+    }
+
+    // Update existing transactions
+    const updateResult = await Transaction.update(
+      { 
+        app_category: new_category,
+        updatedAt: new Date()
+      },
+      {
+        where: {
+          ...whereClause,
+          app_category: 'Miscellaneous' // Only update miscellaneous transactions
+        }
+      }
+    );
+
+    const updatedCount = updateResult[0];
+    console.log(`✅ Updated ${updatedCount} transactions`);
+
+    // Create or update merchant category rule
+    const [merchantRule, created] = await MerchantCategoryRule.findOrCreate({
+      where: { 
+        merchant_pattern: merchant_name.toLowerCase(),
+        exact_match: exact_match
+      },
+      defaults: {
+        merchant_pattern: merchant_name.toLowerCase(),
+        category: new_category,
+        exact_match: exact_match,
+        is_active: true
+      }
+    });
+
+    if (!created) {
+      await merchantRule.update({
+        category: new_category,
+        is_active: true,
+        updatedAt: new Date()
+      });
+    }
+
+    console.log(`📝 ${created ? 'Created' : 'Updated'} merchant category rule`);
+
+    res.json({
+      success: true,
+      message: `Successfully updated ${updatedCount} transactions and ${created ? 'created' : 'updated'} merchant rule`,
+      updated_count: updatedCount,
+      rule_created: created,
+      merchant_rule: {
+        id: merchantRule.id,
+        merchant_pattern: merchantRule.merchant_pattern,
+        category: merchantRule.category,
+        exact_match: merchantRule.exact_match,
+        is_active: merchantRule.is_active
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating merchant category:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update merchant category',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /transactions/merchant-rules:
+ *   get:
+ *     summary: Get all merchant category rules
+ *     description: Returns all merchant category rules for automatic categorization
+ *     tags: [Transactions]
+ *     responses:
+ *       200:
+ *         description: Merchant rules retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 rules:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       merchant_pattern:
+ *                         type: string
+ *                       category:
+ *                         type: string
+ *                       exact_match:
+ *                         type: boolean
+ *                       is_active:
+ *                         type: boolean
+ *                       createdAt:
+ *                         type: string
+ *                       updatedAt:
+ *                         type: string
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get('/merchant-rules', async (req, res) => {
+  try {
+    const rules = await MerchantCategoryRule.findAll({
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({
+      success: true,
+      rules: rules.map(rule => ({
+        id: rule.id,
+        merchant_pattern: rule.merchant_pattern,
+        category: rule.category,
+        exact_match: rule.exact_match,
+        is_active: rule.is_active,
+        createdAt: rule.createdAt,
+        updatedAt: rule.updatedAt
+      }))
+    });
+
+  } catch (error) {
+    console.error('Error fetching merchant rules:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch merchant rules',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /transactions/merchant-rules/{id}:
+ *   delete:
+ *     summary: Delete a merchant category rule
+ *     description: Deletes a merchant category rule by ID
+ *     tags: [Transactions]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: The merchant rule ID
+ *     responses:
+ *       200:
+ *         description: Merchant rule deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Merchant rule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.delete('/merchant-rules/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const rule = await MerchantCategoryRule.findByPk(id);
+    
+    if (!rule) {
+      return res.status(404).json({
+        success: false,
+        error: 'Merchant rule not found'
+      });
+    }
+
+    await rule.destroy();
+
+    res.json({
+      success: true,
+      message: 'Merchant rule deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error deleting merchant rule:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete merchant rule',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /transactions/miscellaneous-merchants:
+ *   get:
+ *     summary: Get merchants with miscellaneous transactions
+ *     description: Returns a list of merchants that have transactions categorized as miscellaneous
+ *     tags: [Transactions]
+ *     responses:
+ *       200:
+ *         description: Merchants retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 merchants:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       merchant_name:
+ *                         type: string
+ *                       transaction_count:
+ *                         type: integer
+ *                       total_amount:
+ *                         type: number
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get('/miscellaneous-merchants', async (req, res) => {
+  try {
+    const merchants = await Transaction.findAll({
+      attributes: [
+        'notes',
+        'details',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'transaction_count'],
+        [sequelize.fn('SUM', sequelize.col('amount')), 'total_amount']
+      ],
+      where: {
+        app_category: 'Miscellaneous',
+        [Op.or]: [
+          { notes: { [Op.ne]: null } },
+          { details: { [Op.ne]: null } }
+        ]
+      },
+      group: ['notes', 'details'],
+      order: [[sequelize.fn('COUNT', sequelize.col('id')), 'DESC']],
+      limit: 50
+    });
+
+    const merchantList = merchants.map(merchant => ({
+      merchant_name: merchant.notes || merchant.details,
+      transaction_count: parseInt(merchant.dataValues.transaction_count),
+      total_amount: parseFloat(merchant.dataValues.total_amount || 0)
+    }));
+
+    res.json({
+      success: true,
+      merchants: merchantList
+    });
+
+  } catch (error) {
+    console.error('Error fetching miscellaneous merchants:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch miscellaneous merchants',
       message: error.message
     });
   }

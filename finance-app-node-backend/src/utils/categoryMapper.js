@@ -1,4 +1,4 @@
-const { CategoryMapping } = require('../models');
+const { CategoryMapping, MerchantCategoryRule } = require('../models');
 
 /**
  * Maps a Plaid personal finance category to an app category using the database
@@ -78,22 +78,78 @@ async function mapPlaidCategory(plaidCategory) {
 }
 
 /**
+ * Maps a transaction by merchant name using merchant rules from database
+ * @param {string} merchantName - The merchant name
+ * @returns {Promise<string>} The mapped app category
+ */
+async function mapByMerchantRules(merchantName) {
+  if (!merchantName) return null;
+
+  try {
+    // First try exact matches
+    const exactRule = await MerchantCategoryRule.findOne({
+      where: {
+        merchant_pattern: merchantName.toLowerCase(),
+        exact_match: true,
+        is_active: true
+      }
+    });
+
+    if (exactRule) {
+      return exactRule.category;
+    }
+
+    // Then try partial matches
+    const partialRule = await MerchantCategoryRule.findOne({
+      where: {
+        merchant_pattern: {
+          [require('sequelize').Op.iLike]: `%${merchantName.toLowerCase()}%`
+        },
+        exact_match: false,
+        is_active: true
+      }
+    });
+
+    if (partialRule) {
+      return partialRule.category;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error mapping by merchant rules:', error);
+    return null;
+  }
+}
+
+/**
  * Maps a transaction to an app category using the best available method
  * @param {Object} transaction - The Plaid transaction object
  * @returns {Promise<string>} The mapped app category
  */
 async function mapTransactionCategory(transaction) {
-  // Priority: personal_finance_category > traditional category > merchant name
+  // Priority: merchant rules > personal_finance_category > traditional category > merchant name
+  const merchantName = transaction.merchant_name || transaction.name;
+  
+  // First, check merchant rules (highest priority)
+  if (merchantName) {
+    const merchantRuleCategory = await mapByMerchantRules(merchantName);
+    if (merchantRuleCategory) {
+      return merchantRuleCategory;
+    }
+  }
+
+  // Then check personal finance category
   if (transaction.personal_finance_category) {
     return await mapPersonalFinanceCategory(transaction.personal_finance_category);
   }
 
+  // Then check traditional category
   if (transaction.category && transaction.category.length > 0) {
     return await mapPlaidCategory(transaction.category[0]);
   }
 
-  // Fallback to merchant name analysis
-  return mapByMerchantName(transaction.name || transaction.merchant_name || '');
+  // Finally, fallback to merchant name analysis
+  return mapByMerchantName(merchantName || '');
 }
 
 /**
@@ -184,5 +240,6 @@ module.exports = {
   mapPersonalFinanceCategory,
   mapPlaidCategory,
   mapTransactionCategory,
-  mapByMerchantName
+  mapByMerchantName,
+  mapByMerchantRules
 }; 

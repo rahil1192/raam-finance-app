@@ -31,6 +31,7 @@ const Transaction = require('./Transaction')(sequelize);
 const PlaidItem = require('./PlaidItem')(sequelize);
 const CategoryMapping = require('./CategoryMapping')(sequelize);
 const RecurringRule = require('./RecurringRule')(sequelize);
+const MerchantCategoryRule = require('./MerchantCategoryRule')(sequelize);
 
 // Define associations
 Account.hasMany(Transaction, { 
@@ -80,5 +81,6 @@ module.exports = {
   Transaction,
   PlaidItem,
   CategoryMapping,
-  RecurringRule
+  RecurringRule,
+  MerchantCategoryRule
 }; 
