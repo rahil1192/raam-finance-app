@@ -226,7 +226,7 @@ router.post('/exchange_public_token', async (req, res) => {
  * /plaid/fetch_transactions:
  *   post:
  *     summary: Fetch transactions from Plaid
- *     description: Fetches transactions from all connected Plaid items for the last 30 days
+ *     description: Fetches transactions from all connected Plaid items from January 1, 2025 to today
  *     tags: [Plaid]
  *     responses:
  *       200:
@@ -276,10 +276,11 @@ router.post('/fetch_transactions', async (req, res) => {
 
     for (const item of plaidItems) {
       try {
-        // Get transactions for the last 30 days
+        // Get transactions from January 1, 2025 to today for new accounts
         const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - 30);
+        const startDate = new Date('2025-01-01'); // Start from January 1, 2025
+
+        console.log(`📅 Fetching transactions from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} for ${item.institution_name}`);
 
         const transactionsResponse = await plaidClient.transactionsGet({
           access_token: item.access_token,
@@ -934,10 +935,11 @@ router.post('/sync_transactions', async (req, res) => {
           // Update cursor
           await item.update({ plaid_cursor: next_cursor });
         } else {
-          // If no cursor, do initial fetch (last 30 days)
+          // If no cursor, do initial fetch from January 1, 2025
           const endDate = new Date();
-          const startDate = new Date();
-          startDate.setDate(startDate.getDate() - 30);
+          const startDate = new Date('2025-01-01'); // Start from January 1, 2025
+
+          console.log(`📅 Initial sync: Fetching transactions from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} for ${item.institution_name}`);
 
           const transactionsResponse = await plaidClient.transactionsGet({
             access_token: item.access_token,
