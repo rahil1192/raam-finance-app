@@ -848,8 +848,60 @@ router.get('/items', async (req, res) => {
  * POST /api/plaid/sync_transactions
  * Sync transactions using Plaid's sync endpoint
  */
+/**
+ * @swagger
+ * /plaid/sync_transactions:
+ *   post:
+ *     summary: Sync transactions from Plaid
+ *     description: |
+ *       Syncs transactions from all connected Plaid items. This endpoint can:
+ *       - Use incremental sync API for items with existing cursors (default behavior)
+ *       - Force a full fetch from January 1, 2025 when force_full_fetch is true
+ *       - Handle new items by fetching from January 1, 2025 to today
+ *     tags: [Plaid]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               force_full_fetch:
+ *                 type: boolean
+ *                 default: false
+ *                 description: |
+ *                   When true, clears all cursors and fetches transactions from January 1, 2025 to today.
+ *                   Use this when you want to refresh all historical data.
+ *     responses:
+ *       200:
+ *         description: Transactions synced successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 added:
+ *                   type: integer
+ *                   description: Number of new transactions added
+ *                 modified:
+ *                   type: integer
+ *                   description: Number of existing transactions modified
+ *                 removed:
+ *                   type: integer
+ *                   description: Number of transactions removed
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 router.post('/sync_transactions', async (req, res) => {
   try {
+    const { force_full_fetch = false } = req.body;
+    
     // Get all Plaid items, not just those with a cursor
     const plaidItems = await PlaidItem.findAll();
 
@@ -859,6 +911,12 @@ router.post('/sync_transactions', async (req, res) => {
 
     for (const item of plaidItems) {
       try {
+        // If force_full_fetch is true, clear the cursor to force a full fetch
+        if (force_full_fetch) {
+          await item.update({ plaid_cursor: null });
+          console.log(`🔄 Force full fetch: Cleared cursor for ${item.institution_name}`);
+        }
+
         // If item has a cursor, use sync API
         if (item.plaid_cursor) {
           const syncResponse = await plaidClient.transactionsSync({
