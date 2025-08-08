@@ -278,7 +278,7 @@ export default function CategoryPickerModal({
     
     setSelected(newSelection);
     
-    // Automatically apply the selection
+    // Automatically apply the selection with the complete category object
     onApply(newSelection);
     
     setNewCategoryName("");

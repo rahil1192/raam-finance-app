@@ -202,7 +202,7 @@ export default function AddExpenseModal() {
     const transactionData = {
       amount: transactionAmount,
       category: category,
-      app_category: category,
+      app_category: categoryCode || category, // Use categoryCode if available (for custom categories), otherwise use category
       date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
       details: details,
       notes: notes || '',
@@ -476,8 +476,14 @@ export default function AddExpenseModal() {
           onApply={async (selected) => {
             if (selected.length > 0) {
               const newCategory = selected[0];
-              setCategory(newCategory.label);
-              setCategoryCode(newCategory.value);
+              // Handle both string and object formats
+              if (typeof newCategory === 'string') {
+                setCategory(newCategory);
+                setCategoryCode(newCategory);
+              } else {
+                setCategory(newCategory.label || newCategory.value || newCategory);
+                setCategoryCode(newCategory.value || newCategory.label || newCategory);
+              }
             }
             setShowCategoryPicker(false);
           }}
