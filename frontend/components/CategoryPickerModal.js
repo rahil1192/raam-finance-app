@@ -259,7 +259,7 @@ export default function CategoryPickerModal({
 
     const newCategory = {
       label: newCategoryName.trim(),
-      value: newCategoryIcon, // This will be the Plaid code
+      value: newCategoryName.trim().toUpperCase().replace(/\s+/g, '_'), // Create a proper value from the name
       icon: selectedIcon,
       color: selectedColor,
       isCustom: true,
@@ -329,7 +329,7 @@ export default function CategoryPickerModal({
     }
     const newParent = {
       label: newParentName.trim(),
-      value: newParentIcon, // This will be the Plaid code
+      value: newParentName.trim().toUpperCase().replace(/\s+/g, '_'), // Create a proper value from the name
       icon: newParentIcon,
       color: newParentColor,
       isCustom: true,
