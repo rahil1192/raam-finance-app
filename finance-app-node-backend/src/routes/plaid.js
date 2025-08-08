@@ -4,7 +4,7 @@ const axios = require('axios');
 const router = express.Router();
 
 // Import models
-const { PlaidItem, Account, Transaction, CategoryMapping } = require('../models');
+const { PlaidItem, Account, Transaction, CategoryMapping, sequelize } = require('../models');
 
 // Import category mapping utility
 const { mapTransactionCategory } = require('../utils/categoryMapper');
@@ -913,7 +913,13 @@ router.post('/sync_transactions', async (req, res) => {
       try {
         // If force_full_fetch is true, clear the cursor to force a full fetch
         if (force_full_fetch) {
-          await item.update({ plaid_cursor: null });
+          await sequelize.query(`
+            UPDATE plaid_items 
+            SET plaid_cursor = NULL 
+            WHERE id = :id
+          `, {
+            replacements: { id: item.id }
+          });
           console.log(`🔄 Force full fetch: Cleared cursor for ${item.institution_name}`);
         }
 
@@ -991,7 +997,13 @@ router.post('/sync_transactions', async (req, res) => {
           }
 
           // Update cursor
-          await item.update({ plaid_cursor: next_cursor });
+          await sequelize.query(`
+            UPDATE plaid_items 
+            SET plaid_cursor = :cursor 
+            WHERE id = :id
+          `, {
+            replacements: { cursor: next_cursor, id: item.id }
+          });
         } else {
           // If no cursor, do initial fetch from January 1, 2025
           const endDate = new Date();
@@ -1046,7 +1058,13 @@ router.post('/sync_transactions', async (req, res) => {
 
           // Set initial cursor for future syncs
           if (transactionsResponse.data.next_cursor) {
-            await item.update({ plaid_cursor: transactionsResponse.data.next_cursor });
+            await sequelize.query(`
+              UPDATE plaid_items 
+              SET plaid_cursor = :cursor 
+              WHERE id = :id
+            `, {
+              replacements: { cursor: transactionsResponse.data.next_cursor, id: item.id }
+            });
           }
         }
 
