@@ -267,6 +267,20 @@ export default function CategoryPickerModal({
     };
 
     setCustomCategories(prev => [...prev, newCategory]);
+    
+    // Automatically select the newly created category
+    let newSelection;
+    if (multiSelect) {
+      newSelection = [...selected, newCategory];
+    } else {
+      newSelection = [newCategory];
+    }
+    
+    setSelected(newSelection);
+    
+    // Automatically apply the selection
+    onApply(newSelection);
+    
     setNewCategoryName("");
     setSelectedIcon("add-circle-outline");
     setSelectedColor("#6366f1");
@@ -336,6 +350,20 @@ export default function CategoryPickerModal({
       parent: null,
     };
     setCustomCategories(prev => [...prev, newParent]);
+    
+    // Automatically select the newly created parent category
+    let newSelection;
+    if (multiSelect) {
+      newSelection = [...selected, newParent];
+    } else {
+      newSelection = [newParent];
+    }
+    
+    setSelected(newSelection);
+    
+    // Automatically apply the selection
+    onApply(newSelection);
+    
     setParentCategory(newParent.value);
     setNewParentName("");
     setNewParentIcon("add-circle-outline");
