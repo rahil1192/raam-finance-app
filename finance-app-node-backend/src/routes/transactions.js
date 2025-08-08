@@ -167,7 +167,7 @@ router.post('/', async (req, res) => {
     let appCategory = transactionData.app_category;
     
     if (transactionData.category) {
-      // If app_category is provided and different from category, it's likely a custom category
+      // If app_category is provided and different from category, it's a custom category
       if (transactionData.app_category && transactionData.app_category !== transactionData.category) {
         // Use the provided app_category directly (custom category)
         appCategory = transactionData.app_category;
@@ -285,7 +285,7 @@ router.put('/:id', async (req, res) => {
     
     // Apply category mapping if category is being updated
     if (updateData.category) {
-      // If app_category is provided and different from category, it's likely a custom category
+      // If app_category is provided and different from category, it's a custom category
       if (updateData.app_category && updateData.app_category !== updateData.category) {
         // Use the provided app_category directly (custom category)
         formattedUpdateData.category = updateData.category; // Keep original category
