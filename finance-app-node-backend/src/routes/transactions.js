@@ -162,20 +162,27 @@ router.post('/', async (req, res) => {
       });
     }
     
-    // Apply category mapping if category is provided
+    // Handle category mapping
     let mappedCategory = transactionData.category;
     let appCategory = transactionData.app_category;
     
     if (transactionData.category) {
-      // Map Plaid category to app category
-      appCategory = mapPlaidCategoryToAppCategory(transactionData.category);
-      console.log(`🔍 Category mapping: "${transactionData.category}" -> "${appCategory}"`);
+      // If app_category is provided and different from category, it's likely a custom category
+      if (transactionData.app_category && transactionData.app_category !== transactionData.category) {
+        // Use the provided app_category directly (custom category)
+        appCategory = transactionData.app_category;
+        console.log(`🔍 Using custom category: "${appCategory}"`);
+      } else {
+        // Map Plaid category to app category
+        appCategory = mapPlaidCategoryToAppCategory(transactionData.category);
+        console.log(`🔍 Category mapping: "${transactionData.category}" -> "${appCategory}"`);
+      }
     }
     
     // Create transaction with mapped categories
     const transaction = await Transaction.create({
       ...transactionData,
-      category: mappedCategory, // Keep original Plaid category
+      category: mappedCategory, // Keep original category
       app_category: appCategory, // Store mapped app category
       date: new Date(transactionData.date),
       amount: parseFloat(transactionData.amount)
@@ -278,10 +285,19 @@ router.put('/:id', async (req, res) => {
     
     // Apply category mapping if category is being updated
     if (updateData.category) {
-      const appCategory = mapPlaidCategoryToAppCategory(updateData.category);
-      formattedUpdateData.category = updateData.category; // Keep original Plaid category
-      formattedUpdateData.app_category = appCategory; // Store mapped app category
-      console.log(`🔍 Category mapping: "${updateData.category}" -> "${appCategory}"`);
+      // If app_category is provided and different from category, it's likely a custom category
+      if (updateData.app_category && updateData.app_category !== updateData.category) {
+        // Use the provided app_category directly (custom category)
+        formattedUpdateData.category = updateData.category; // Keep original category
+        formattedUpdateData.app_category = updateData.app_category; // Use custom category directly
+        console.log(`🔍 Using custom category: "${updateData.app_category}"`);
+      } else {
+        // Map Plaid category to app category
+        const appCategory = mapPlaidCategoryToAppCategory(updateData.category);
+        formattedUpdateData.category = updateData.category; // Keep original category
+        formattedUpdateData.app_category = appCategory; // Store mapped app category
+        console.log(`🔍 Category mapping: "${updateData.category}" -> "${appCategory}"`);
+      }
     }
     
     console.log('📝 Formatted update data:', formattedUpdateData);
