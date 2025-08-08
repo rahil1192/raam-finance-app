@@ -31,6 +31,7 @@ export function AccountsProvider({ children }) {
 
       console.log('✅ Processed accounts:', accountsData.length);
       console.log('✅ Processed plaid items:', plaidItemsData.length);
+      console.log('✅ Last refresh data:', lastRefreshData);
       console.log('✅ Accounts data type:', typeof accountsData);
       console.log('✅ Accounts is array:', Array.isArray(accountsData));
 
@@ -41,7 +42,7 @@ export function AccountsProvider({ children }) {
       setAccounts(safeAccountsData);
       setPlaidItems(safePlaidItemsData);
       
-      // Set the most recent refresh time
+      // Set the most recent refresh time from all items
       if (lastRefreshData.length > 0) {
         const mostRecent = lastRefreshData.reduce((latest, item) => {
           if (!latest || !item.last_refresh) return latest;

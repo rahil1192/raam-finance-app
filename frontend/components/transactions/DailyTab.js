@@ -79,6 +79,8 @@ export default function DailyTab({ transactions: propTransactions }) {
         notes: transaction.notes || "",
         transactionType: transaction.transaction_type,
         account_id: transaction.account_id,
+        recurrence_pattern: transaction.recurrence_pattern,
+        is_recurring: transaction.is_recurring,
       })
       groups[date].total += amount
       return groups

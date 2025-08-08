@@ -82,13 +82,6 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
     initialIndex = 0;
   }
 
-  console.log('CashFlowPage Debug:', {
-    initialSelectedMonth,
-    monthsList,
-    initialIndex,
-    fallbackMonthsData: Object.keys(fallbackMonthsData)
-  });
-
   // Define action types
   const ACTIONS = {
     SET_MONTH: 'SET_MONTH',
@@ -248,14 +241,6 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
 
   // Update handlers
   const handleMonthChange = (newIndex) => {
-    console.log('CashFlowPage handleMonthChange:', {
-      currentIndex: state.monthIndex,
-      newIndex: newIndex,
-      currentMonth: monthsList[state.monthIndex],
-      newMonth: monthsList[newIndex],
-      totalMonths: monthsList.length,
-      monthsList: monthsList
-    });
     dispatch({ type: ACTIONS.SET_MONTH, payload: newIndex });
   };
 

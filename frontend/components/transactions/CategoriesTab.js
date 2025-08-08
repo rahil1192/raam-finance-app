@@ -230,6 +230,8 @@ export default function CategoriesTab({ transactions: propTransactions, selected
         bank: transaction.bank,
         statement_type: transaction.statement_type,
         originalDate: transaction.date, // Pass original date for proper date handling
+        recurrence_pattern: transaction.recurrence_pattern,
+        is_recurring: transaction.is_recurring,
       }
     });
   };

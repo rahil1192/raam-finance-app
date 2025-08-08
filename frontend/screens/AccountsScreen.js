@@ -29,6 +29,12 @@ export default function App({ navigation }) {
   console.log('🔍 AccountsScreen - accounts type:', typeof accounts);
   console.log('🔍 AccountsScreen - accounts is array:', Array.isArray(accounts));
   
+  // Debug individual account structure
+  if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+    console.log('🔍 First account structure:', accounts[0]);
+    console.log('🔍 First account plaid_item:', accounts[0].plaid_item);
+  }
+  
   const [selectedTab, setSelectedTab] = useState('NET WORTH');
   const [selectedRange, setSelectedRange] = useState('1M');
   const [refreshing, setRefreshing] = useState(false);
@@ -144,14 +150,22 @@ export default function App({ navigation }) {
   const getFilteredAccounts = () => {
     const accountsByBank = {};
     if (accounts && Array.isArray(accounts)) {
+      console.log('🔍 Grouping accounts:', accounts.length);
       accounts.forEach(account => {
-        const bankName = account.institution_name || 'Unknown Bank';
+        // Get institution name from nested plaid_item or fallback to direct property
+        const bankName = account.plaid_item?.institution_name || 
+                        account.institution_name || 
+                        'Unknown Bank';
+        
+        console.log('🏦 Account:', account.name, 'Bank:', bankName);
+        
         if (!accountsByBank[bankName]) {
           accountsByBank[bankName] = [];
         }
         accountsByBank[bankName].push(account);
       });
     }
+    console.log('📊 Grouped accounts:', Object.keys(accountsByBank));
     return accountsByBank;
   };
 

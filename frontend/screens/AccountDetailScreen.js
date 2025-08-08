@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Modal, TouchableWithoutFeedback, FlatList, SafeAreaView, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Modal, TouchableWithoutFeedback, FlatList, SafeAreaView, TextInput, BackHandler } from 'react-native';
 import { create, open } from 'react-native-plaid-link-sdk';
 import axios from 'axios';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import FilterModal from '../components/FilterModal';
 import AntDesign from 'react-native-vector-icons/AntDesign';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import { useAccounts } from '../context/AccountsContext';
+import { apiConfig } from '../config/api';
 
-const API_BASE_URL = 'https://raam-finance-app.onrender.com/api';
 const TIME_RANGES = ['1M', '3M', '6M', 'YTD', '1Y', 'ALL'];
 const DATE_RANGES = ['All time', 'This month', 'Last month', 'Custom'];
 const SORT_OPTIONS = ['Date (new to old)', 'Date (old to new)', 'Amount (high to low)', 'Amount (low to high)'];
@@ -46,10 +46,17 @@ export default function AccountDetailScreen({ route, navigation }) {
   const [refreshMessage, setRefreshMessage] = useState("");
   const isFocused = useIsFocused();
 
+  // Debug account object
+  console.log('🔍 AccountDetailScreen Debug:');
+  console.log('📦 Initial account:', initialAccount);
+  console.log('📦 Current account:', account);
+  console.log('📦 Account ID:', account?.account_id);
+  console.log('📦 Account name:', account?.name);
+
   useEffect(() => {
     const fetchAllAccounts = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/accounts`);
+        const res = await axios.get(`${apiConfig.baseURL}/api/accounts`);
         if (Array.isArray(res.data)) {
           setAllAccounts(res.data);
         }
@@ -64,10 +71,11 @@ export default function AccountDetailScreen({ route, navigation }) {
   useEffect(() => {
     const fetchLastRefresh = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/plaid/last_refresh`);
-        setLastRefresh(res.data.last_refresh);
+        const res = await axios.get(`${apiConfig.baseURL}/api/plaid/last_refresh`);
+        // Don't call setLastRefresh since it's managed by the context
+        // The context will update automatically when refreshAccounts() is called
       } catch (e) {
-        setLastRefresh(null);
+        console.error('Error fetching last refresh:', e);
       }
     };
     fetchLastRefresh();
@@ -77,9 +85,29 @@ export default function AccountDetailScreen({ route, navigation }) {
     // Fetch recent transactions for this account (placeholder logic)
     const fetchTransactions = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/transactions?account_id=${account.account_id}`);
-        setTransactions(res.data.slice(0, 4)); // Show 4 recent
+        console.log('🔍 Fetching transactions for account:', account.account_id);
+        console.log('🔧 API URL:', `${apiConfig.baseURL}/api/transactions?account_id=${account.account_id}`);
+        
+        const res = await axios.get(`${apiConfig.baseURL}/api/transactions?account_id=${account.account_id}`);
+        console.log('📦 Transactions API response:', res.data);
+        console.log('📊 Response type:', typeof res.data);
+        console.log('📊 Is array:', Array.isArray(res.data));
+        console.log('📊 Response length:', res.data?.length);
+        
+        // Handle different response formats
+        let transactionsData = res.data;
+        if (res.data && res.data.success && res.data.transactions) {
+          transactionsData = res.data.transactions;
+        }
+        
+        console.log('✅ Processed transactions data:', transactionsData);
+        console.log('📊 Processed data length:', transactionsData?.length);
+        
+        setTransactions(transactionsData.slice(0, 4)); // Show 4 recent
       } catch (e) {
+        console.error('❌ Error fetching transactions:', e);
+        console.error('❌ Error response:', e.response?.data);
+        console.error('❌ Error status:', e.response?.status);
         setTransactions([]);
       }
     };
@@ -95,16 +123,35 @@ export default function AccountDetailScreen({ route, navigation }) {
           ? filters.selectedAccounts 
           : [account.account_id];
 
+        console.log('🔍 Fetching all transactions for accounts:', accountIds);
+
         // Fetch transactions for each selected account
-        const allTxnPromises = accountIds.map(accountId => 
-          axios.get(`${API_BASE_URL}/transactions?account_id=${accountId}`)
-        );
+        const allTxnPromises = accountIds.map(accountId => {
+          const url = `${apiConfig.baseURL}/api/transactions?account_id=${accountId}`;
+          console.log('🔧 API URL for account', accountId, ':', url);
+          return axios.get(url);
+        });
         
         const responses = await Promise.all(allTxnPromises);
-        const allTxns = responses.flatMap(res => res.data);
+        console.log('📦 All transaction responses:', responses.map(r => r.data));
+        
+        const allTxns = responses.flatMap(res => {
+          // Handle different response formats
+          let transactionsData = res.data;
+          if (res.data && res.data.success && res.data.transactions) {
+            transactionsData = res.data.transactions;
+          }
+          return transactionsData || [];
+        });
+        
+        console.log('✅ Processed all transactions:', allTxns);
+        console.log('📊 Total transactions count:', allTxns.length);
         
         setAllTransactions(allTxns);
       } catch (e) {
+        console.error('❌ Error fetching all transactions:', e);
+        console.error('❌ Error response:', e.response?.data);
+        
         if (
           (e.response && e.response.data && e.response.data.error === 'ITEM_LOGIN_REQUIRED') ||
           (e.response && e.response.status === 500)
@@ -224,62 +271,233 @@ export default function AccountDetailScreen({ route, navigation }) {
     filters
   );
 
+  // Debug filtered transactions
+  console.log('🔍 Filtered transactions debug:');
+  console.log('📊 allTransactions length:', allTransactions?.length);
+  console.log('📊 searchQuery:', searchQuery);
+  console.log('📊 filteredTransactions length:', filteredTransactions?.length);
+  console.log('📊 Sample filtered transaction:', filteredTransactions?.[0]);
+
   const isStale = () => {
     if (!lastRefresh) return true;
     const last = new Date(lastRefresh);
     return (Date.now() - last.getTime()) > 24 * 60 * 60 * 1000;
   };
 
+  // Check if sync is needed (more than 24 hours since last sync)
+  const needsSync = () => {
+    if (!lastRefresh) return true;
+    const last = new Date(lastRefresh);
+    const hoursSinceLastSync = (Date.now() - last.getTime()) / (1000 * 60 * 60);
+    return hoursSinceLastSync > 24;
+  };
+
+  // Show sync reminder if needed
+  useEffect(() => {
+    if (needsSync() && !needsUpdate) {
+      const hoursSinceLastSync = lastRefresh ? 
+        ((Date.now() - new Date(lastRefresh).getTime()) / (1000 * 60 * 60)).toFixed(1) : 
+        'unknown';
+      
+      Alert.alert(
+        'Sync Reminder',
+        `It's been ${hoursSinceLastSync} hours since your last sync. Would you like to sync your transactions now?`,
+        [
+          { text: 'Later', style: 'cancel' },
+          { text: 'Sync Now', onPress: handleUpdate }
+        ]
+      );
+    }
+  }, [lastRefresh, needsUpdate]);
+
   const handleUpdate = async () => {
     setUpdating(true);
     try {
       console.log('Account data:', account);
       
+      // Use Plaid's recommended sync API instead of fetch_transactions
+      console.log('🔄 Syncing transactions for account:', account.account_id);
+      
       // Get the Plaid item ID from the account
-      const plaidRes = await axios.get(`${API_BASE_URL}/plaid/items`);
-      const plaidItem = plaidRes.data.find(item => 
-        item.accounts.some(acc => acc.account_id === account.account_id)
+      const plaidRes = await axios.get(`${apiConfig.baseURL}/api/plaid/items`);
+      console.log('📦 Plaid items response:', plaidRes.data);
+      console.log('📊 Response type:', typeof plaidRes.data);
+      console.log('📊 Is array:', Array.isArray(plaidRes.data));
+      
+      // Check if the API call was successful
+      if (!plaidRes.data) {
+        console.error('❌ No response data from plaid items API');
+        Alert.alert('Error', 'Failed to fetch Plaid items. Please try again.');
+        setUpdating(false);
+        return;
+      }
+      
+      // Handle different response formats
+      let plaidItems = [];
+      if (plaidRes.data && plaidRes.data.success && Array.isArray(plaidRes.data.items)) {
+        plaidItems = plaidRes.data.items;
+      } else if (plaidRes.data && Array.isArray(plaidRes.data)) {
+        plaidItems = plaidRes.data;
+      } else if (plaidRes.data && plaidRes.data.success && Array.isArray(plaidRes.data.data)) {
+        plaidItems = plaidRes.data.data;
+      } else {
+        console.error('❌ Unexpected plaid items response format:', plaidRes.data);
+        Alert.alert('Error', 'Failed to fetch Plaid items. Please try again.');
+        setUpdating(false);
+        return;
+      }
+      
+      console.log('✅ Processed plaid items:', plaidItems);
+      
+      const plaidItem = plaidItems.find(item => 
+        item.accounts && item.accounts.some(acc => acc.account_id === account.account_id)
       );
       
       if (!plaidItem) {
-        Alert.alert('Error', 'No Plaid item found for this account');
+        console.error('❌ No Plaid item found for account:', account.account_id);
+        console.error('❌ Available plaid items:', plaidItems.map(item => ({
+          item_id: item.item_id,
+          institution_name: item.institution_name,
+          accounts: item.accounts?.map(acc => acc.account_id) || []
+        })));
+        Alert.alert('Error', 'No Plaid item found for this account. Please try reconnecting your bank account.');
         setUpdating(false);
         return;
       }
 
-      // Create link token for update
-      const res = await axios.post(`${API_BASE_URL}/plaid/create_link_token`, 
-        { update_mode: true, item_id: plaidItem.item_id }, 
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      console.log('📦 Found Plaid item:', plaidItem.item_id);
+      console.log('📦 Item status:', plaidItem.status);
+      console.log('📦 Item needs_update:', plaidItem.needs_update);
+
+      // Check if the item needs update (credentials expired)
+      if (plaidItem.needs_update || plaidItem.status === 'ITEM_LOGIN_REQUIRED') {
+        Alert.alert(
+          'Credentials Expired', 
+          'Your bank credentials have expired. You need to re-authenticate with your bank.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Re-authenticate', 
+              onPress: async () => {
+                try {
+                  // Create link token for update mode
+                  const res = await axios.post(`${apiConfig.baseURL}/api/plaid/create_link_token`, 
+                    { update_mode: true, item_id: plaidItem.item_id }, 
+                    { headers: { 'Content-Type': 'application/json' } }
+                  );
+                  
+                  const linkToken = res.data.link_token;
+                  if (!linkToken) throw new Error('No link token received');
+                  
+                  create({ token: linkToken, noLoadingState: false });
+                  open({
+                    onSuccess: async (result) => {
+                      try {
+                        await axios.post(`${apiConfig.baseURL}/api/plaid/exchange_public_token`, { public_token: result.publicToken });
+                        await refreshAccounts();
+                        Alert.alert('Success', 'Account updated successfully!');
+                        setRefreshMessage("");
+                      } catch (error) {
+                        Alert.alert('Error', 'Failed to update account. Please try again.');
+                      } finally {
+                        setUpdating(false);
+                      }
+                    },
+                    onExit: (result) => {
+                      if (result.error) {
+                        Alert.alert('Error', result.error.displayMessage || 'Could not update account');
+                      }
+                      setUpdating(false);
+                    },
+                  });
+                } catch (error) {
+                  console.error('Error creating link token:', error);
+                  Alert.alert('Error', 'Failed to create update link. Please try again.');
+                  setUpdating(false);
+                }
+              }
+            }
+          ]
+        );
+        setUpdating(false);
+        return;
+      }
+
+      // If credentials are still valid, use Plaid's sync API
+      console.log('✅ Credentials are valid, syncing transactions...');
       
-      const linkToken = res.data.link_token;
-      if (!linkToken) throw new Error('No link token received');
+      const syncResponse = await axios.post(`${apiConfig.baseURL}/api/plaid/sync_transactions`);
+      console.log('📦 Sync response:', syncResponse.data);
       
-      create({ token: linkToken, noLoadingState: false });
-      open({
-        onSuccess: async (result) => {
-          try {
-            await axios.post(`${API_BASE_URL}/plaid/exchange_public_token`, { public_token: result.publicToken });
-            await refreshAccounts();
-            Alert.alert('Success', 'Account updated successfully!');
-            setRefreshMessage("");
-          } catch (error) {
-            Alert.alert('Error', 'Failed to update account. Please try again.');
-          } finally {
-            setUpdating(false);
-          }
-        },
-        onExit: (result) => {
-          if (result.error) {
-            Alert.alert('Error', result.error.displayMessage || 'Could not update account');
-          }
-          setUpdating(false);
-        },
-      });
+      if (syncResponse.data.success) {
+        const { added, modified, removed } = syncResponse.data;
+        let message = '';
+        
+        if (added > 0 || modified > 0 || removed > 0) {
+          const changes = [];
+          if (added > 0) changes.push(`${added} new`);
+          if (modified > 0) changes.push(`${modified} updated`);
+          if (removed > 0) changes.push(`${removed} removed`);
+          message = `${changes.join(', ')} transaction${changes.length > 1 ? 's' : ''} synced`;
+        } else {
+          message = 'No new transactions found';
+        }
+        
+        setRefreshMessage(message);
+      } else {
+        setRefreshMessage('Sync completed');
+      }
+
+      // Refresh account data
+      await refreshAccounts();
+      
+      // Refetch transactions for this account
+      const res = await axios.get(`${apiConfig.baseURL}/api/transactions?account_id=${account.account_id}`);
+      let transactionsData = res.data;
+      if (res.data && res.data.success && res.data.transactions) {
+        transactionsData = res.data.transactions;
+      }
+      setAllTransactions(transactionsData);
+      
+      // Refetch last refresh time
+      try {
+        const lastRes = await axios.get(`${apiConfig.baseURL}/api/plaid/last_refresh`);
+        console.log('📦 Last refresh response:', lastRes.data);
+        // Don't call setLastRefresh since it's managed by the context
+        // The context will update automatically when refreshAccounts() is called
+      } catch (e) {
+        console.error('Error fetching last refresh:', e);
+      }
+
+      // Reset needsUpdate state after successful sync
+      setRefreshMessage("");
+
+      Alert.alert('Success', 'Account synced successfully!');
+      
     } catch (error) {
-      console.log('Full error response:', error.response);
-      setRefreshMessage(error.response?.data?.message || 'Error updating account');
+      console.error('❌ Error syncing account:', error);
+      console.error('❌ Error response:', error.response?.data);
+      
+      if (error.response?.data?.error === 'ITEM_LOGIN_REQUIRED' || 
+          error.response?.data?.message?.includes('ITEM_LOGIN_REQUIRED')) {
+        Alert.alert(
+          'Credentials Expired', 
+          'Your bank credentials have expired. You need to re-authenticate with your bank.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Re-authenticate', 
+              onPress: () => {
+                // This will trigger the re-authentication flow
+                handleUpdate();
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Error', 'Failed to sync account. Please try again.');
+      }
+    } finally {
       setUpdating(false);
     }
   };
@@ -292,19 +510,21 @@ export default function AccountDetailScreen({ route, navigation }) {
     setRefreshing(true);
     setRefreshMessage("");
     try {
-      const response = await axios.post(`${API_BASE_URL}/plaid/fetch_transactions`);
+      const response = await axios.post(`${apiConfig.baseURL}/api/plaid/fetch_transactions`);
       if (response.data.transactions_imported > 0) {
         setRefreshMessage(`${response.data.transactions_imported} new transactions imported`);
       } else {
         setRefreshMessage('No new transactions found');
       }
       // Refetch transactions
-      const res = await axios.get(`${API_BASE_URL}/transactions?account_id=${account.account_id}`);
+      const res = await axios.get(`${apiConfig.baseURL}/api/transactions?account_id=${account.account_id}`);
       setAllTransactions(res.data);
       // Refetch lastRefresh
       try {
-        const lastRes = await axios.get(`${API_BASE_URL}/plaid/last_refresh`);
-        setLastRefresh(lastRes.data.last_refresh);
+        const lastRes = await axios.get(`${apiConfig.baseURL}/api/plaid/last_refresh`);
+        console.log('📦 Last refresh response:', lastRes.data);
+        // Don't call setLastRefresh since it's managed by the context
+        // The context will update automatically when refreshAccounts() is called
       } catch {}
     } catch (e) {
       console.log('Full error response:', e.response);
@@ -414,10 +634,10 @@ export default function AccountDetailScreen({ route, navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await axios.delete(`${API_BASE_URL}/accounts/${account.account_id}`);
+              await axios.delete(`${apiConfig.baseURL}/api/accounts/${account.account_id}`);
               await refreshAccounts();
               Alert.alert('Success', 'Account deleted successfully', [
-                { text: 'OK', onPress: () => navigation.goBack() }
+                { text: 'OK', onPress: () => handleGoBack() }
               ]);
             } catch (error) {
               Alert.alert('Error', 'Failed to delete account. Please try again.');
@@ -456,21 +676,89 @@ export default function AccountDetailScreen({ route, navigation }) {
     const plaidItem = plaidItems.find(item =>
       item.accounts.some(acc => acc.account_id === account.account_id)
     );
+    
+    console.log('🔍 Centralized needsUpdate logic:');
+    console.log('📦 plaidItems count:', plaidItems.length);
+    console.log('📦 account.account_id:', account.account_id);
+    console.log('📦 plaidItem:', plaidItem);
+    console.log('📦 plaidItem.needs_update:', plaidItem?.needs_update);
+    console.log('📦 plaidItem.status:', plaidItem?.status);
+    console.log('📦 lastRefresh:', lastRefresh);
+    console.log('📦 lastRefresh type:', typeof lastRefresh);
+    
     if (plaidItem && (plaidItem.needs_update || plaidItem.status === 'ITEM_LOGIN_REQUIRED')) {
       plaidNeedsUpdate = true;
+      console.log('⚠️ Setting plaidNeedsUpdate to true because:');
+      if (plaidItem.needs_update) console.log('  - plaidItem.needs_update is true');
+      if (plaidItem.status === 'ITEM_LOGIN_REQUIRED') console.log('  - plaidItem.status is ITEM_LOGIN_REQUIRED');
     }
+    
     const stale = !lastRefresh || (Date.now() - new Date(lastRefresh).getTime()) > 24 * 60 * 60 * 1000;
+    console.log('📦 lastRefresh exists:', !!lastRefresh);
+    if (lastRefresh) {
+      const hoursSinceRefresh = (Date.now() - new Date(lastRefresh).getTime()) / (1000 * 60 * 60);
+      console.log('📦 hours since last refresh:', hoursSinceRefresh);
+      console.log('📦 is stale (>24 hours):', hoursSinceRefresh > 24);
+    }
+    console.log('📦 plaidNeedsUpdate:', plaidNeedsUpdate);
+    console.log('📦 stale:', stale);
+    console.log('📦 final needsUpdate:', stale || plaidNeedsUpdate);
+    
     setNeedsUpdate(stale || plaidNeedsUpdate);
   }, [plaidItems, account, lastRefresh]);
 
   // Add debug log before return
   console.log('needsUpdate state:', needsUpdate);
 
+  // Add navigation debugging
+  console.log('🔍 Navigation debug:');
+  console.log('📦 navigation object:', navigation);
+  console.log('📦 route object:', route);
+
+  // Handle back navigation properly
+  const handleGoBack = () => {
+    console.log('🔍 Attempting to go back...');
+    try {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        // If we can't go back, navigate to the main screen
+        navigation.navigate('Main');
+      }
+    } catch (error) {
+      console.error('❌ Navigation error:', error);
+      // Fallback to main screen
+      navigation.navigate('Main');
+    }
+  };
+
+  // Handle hardware back button on Android
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      console.log('🔍 Hardware back button pressed');
+      handleGoBack();
+      return true; // Prevent default behavior
+    });
+
+    return () => backHandler.remove();
+  }, []);
+
+  // Debug screen focus
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🔍 AccountDetailScreen focused');
+      console.log('📦 Current navigation state:', navigation.getState());
+      return () => {
+        console.log('🔍 AccountDetailScreen unfocused');
+      };
+    }, [])
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: '#FAF9F6' }}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={handleGoBack}>
           <Text style={styles.headerIcon}>{'←'}</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1} ellipsizeMode="tail">{account.name}</Text>
@@ -482,10 +770,21 @@ export default function AccountDetailScreen({ route, navigation }) {
       {needsUpdate && (
         <View style={{ backgroundColor: '#FFEB3B', padding: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
           <Text style={{ color: '#222', fontWeight: 'bold', flex: 1 }}>
-            {'Bank connection needs updating. Please update to continue syncing transactions and balances.'}
+            {'Bank connection needs updating. Please sync to continue syncing transactions and balances.'}
           </Text>
           <TouchableOpacity style={[styles.updateBtnTop, { marginLeft: 8 }]} onPress={handleUpdate} disabled={updating}>
-            <Text style={styles.updateBtnTextTop}>{updating ? 'Updating...' : 'Update'}</Text>
+            <Text style={styles.updateBtnTextTop}>{updating ? 'Syncing...' : 'Sync'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {/* Sync Reminder Banner */}
+      {!needsUpdate && needsSync() && (
+        <View style={{ backgroundColor: '#E3F2FD', padding: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+          <Text style={{ color: '#1976D2', fontWeight: 'bold', flex: 1 }}>
+            {`It's been ${lastRefresh ? ((Date.now() - new Date(lastRefresh).getTime()) / (1000 * 60 * 60)).toFixed(1) : 'unknown'} hours since last sync.`}
+          </Text>
+          <TouchableOpacity style={[styles.updateBtnTop, { marginLeft: 8, backgroundColor: '#1976D2' }]} onPress={handleUpdate} disabled={updating}>
+            <Text style={styles.updateBtnTextTop}>{updating ? 'Syncing...' : 'Sync Now'}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -542,9 +841,20 @@ export default function AccountDetailScreen({ route, navigation }) {
         {/* Recent Transactions */}
         <Text style={styles.sectionTitle}>Recent Transactions</Text>
         <View style={styles.txnList}>
-          {allTransactions.slice(0, 4).length > 0
-            ? allTransactions.slice(0, 4).map(renderTransaction)
-            : <Text style={{ color: '#aaa', margin: 16 }}>No recent transactions.</Text>}
+          {(() => {
+            console.log('🔍 Rendering recent transactions:');
+            console.log('📊 allTransactions length:', allTransactions.length);
+            console.log('📊 allTransactions slice:', allTransactions.slice(0, 4));
+            console.log('📊 transactions state:', transactions);
+            
+            const recentTransactions = allTransactions.slice(0, 4);
+            
+            if (recentTransactions.length > 0) {
+              return recentTransactions.map(renderTransaction);
+            } else {
+              return <Text style={{ color: '#aaa', margin: 16 }}>No recent transactions.</Text>;
+            }
+          })()}
         </View>
         <TouchableOpacity style={styles.viewAllBtn} onPress={() => setShowAllTransactionsModal(true)}>
           <Text style={styles.viewAllBtnText}>View all transactions</Text>
@@ -566,7 +876,7 @@ export default function AccountDetailScreen({ route, navigation }) {
         <Text style={styles.sectionTitle}>Connection status</Text>
         <View style={styles.statusRow}>
           <Text style={styles.statusIcon}>⟳</Text>
-          <Text style={styles.statusLabel2}>Last update</Text>
+          <Text style={styles.statusLabel2}>Last sync</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={[styles.statusValue2, isStale() && { color: '#FF3B30' }]}>{lastUpdateString}</Text>
             {isStale() && (
@@ -576,6 +886,15 @@ export default function AccountDetailScreen({ route, navigation }) {
             )}
           </View>
         </View>
+        {lastRefresh && (
+          <View style={styles.statusRow}>
+            <Text style={styles.statusIcon}>⏰</Text>
+            <Text style={styles.statusLabel2}>Time since sync</Text>
+            <Text style={[styles.statusValue2, needsSync() && { color: '#FF9800' }]}>
+              {((Date.now() - new Date(lastRefresh).getTime()) / (1000 * 60 * 60)).toFixed(1)} hours
+            </Text>
+          </View>
+        )}
       </ScrollView>
 
       {/* Full Screen Transactions Modal */}

@@ -44,22 +44,40 @@ const MonthlyTab = ({ transactions = [], summary = null }) => {
     return map
   }, [transactions])
 
-  // Prepare month list for bar/list view
-  const monthList = useMemo(() => {
-    return Object.entries(grouped)
-      .map(([month, data]) => {
-        let value = 0
-        if (filter === "all") value = data.income - data.expenses
-        else if (filter === "income") value = data.income
-        else value = -data.expenses
-        return { month, value, ...data }
+  // Generate complete list of months from January 2025 to current month
+  const generateMonthList = useMemo(() => {
+    const months = []
+    const startDate = new Date(2025, 0, 1) // January 2025
+    const currentDate = new Date()
+    const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1) // First day of current month
+    
+    let currentMonth = new Date(startDate)
+    
+    while (currentMonth <= endDate) {
+      const monthKey = currentMonth.toLocaleString("default", { month: "long" }) + " " + currentMonth.getFullYear()
+      const monthData = grouped[monthKey] || { income: 0, expenses: 0, transactions: [] }
+      
+      let value = 0
+      if (filter === "all") value = monthData.income - monthData.expenses
+      else if (filter === "income") value = monthData.income
+      else value = -monthData.expenses
+      
+      months.push({
+        month: monthKey,
+        value: value,
+        ...monthData
       })
-      .sort((a, b) => {
-        // Sort by date descending
-        const dA = new Date(a.month)
-        const dB = new Date(b.month)
-        return dB - dA
-      })
+      
+      // Move to next month
+      currentMonth.setMonth(currentMonth.getMonth() + 1)
+    }
+    
+    // Sort by date descending (most recent first)
+    return months.sort((a, b) => {
+      const dA = new Date(a.month)
+      const dB = new Date(b.month)
+      return dB - dA
+    })
   }, [grouped, filter])
 
   const handleMonthSelect = (month, monthData) => {
@@ -87,37 +105,50 @@ const MonthlyTab = ({ transactions = [], summary = null }) => {
   )
 
   // Render month bar/list
-  const renderMonthBar = ({ item }) => (
-    <TouchableOpacity
-      style={styles.monthBar}
-      onPress={() => handleMonthSelect(item.month, grouped[item.month])}
-      activeOpacity={0.7}
-    >
-      <View style={styles.monthBarHeader}>
-        <Text style={styles.monthBarTitle}>{item.month}</Text>
-        <Text style={[styles.monthBarValue, item.value >= 0 ? styles.positive : styles.negative]}>
-          {item.value >= 0 ? "+" : "-"}${Math.abs(item.value).toFixed(2)}
-        </Text>
-      </View>
-      <View style={styles.monthBarLineContainer}>
-        <View
-          style={[
-            styles.monthBarLine,
-            {
-              backgroundColor: item.value >= 0 ? "#22c55e" : "#f59e42",
-              width: `${Math.min(Math.abs(item.value) / 1000, 1) * 100}%`,
-            },
-          ]}
-        />
-      </View>
-    </TouchableOpacity>
-  )
+  const renderMonthBar = ({ item }) => {
+    const hasTransactions = item.transactions && item.transactions.length > 0;
+    
+    return (
+      <TouchableOpacity
+        style={[styles.monthBar, !hasTransactions && styles.monthBarEmpty]}
+        onPress={() => handleMonthSelect(item.month, grouped[item.month] || { income: 0, expenses: 0, transactions: [] })}
+        activeOpacity={0.7}
+      >
+        <View style={styles.monthBarHeader}>
+          <Text style={[styles.monthBarTitle, !hasTransactions && styles.monthBarTitleEmpty]}>{item.month}</Text>
+          <Text style={[
+            styles.monthBarValue, 
+            item.value >= 0 ? styles.positive : styles.negative,
+            !hasTransactions && styles.monthBarValueEmpty
+          ]}>
+            {hasTransactions ? (
+              `${item.value >= 0 ? "+" : "-"}$${Math.abs(item.value).toFixed(2)}`
+            ) : (
+              "No transactions"
+            )}
+          </Text>
+        </View>
+        <View style={styles.monthBarLineContainer}>
+          <View
+            style={[
+              styles.monthBarLine,
+              {
+                backgroundColor: hasTransactions ? (item.value >= 0 ? "#22c55e" : "#f59e42") : "#64748b",
+                width: hasTransactions ? `${Math.min(Math.abs(item.value) / 1000, 1) * 100}%` : "0%",
+                opacity: hasTransactions ? 1 : 0.3,
+              },
+            ]}
+          />
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
       {renderFilters()}
       <FlatList
-        data={monthList}
+        data={generateMonthList}
         renderItem={renderMonthBar}
         keyExtractor={(item) => item.month}
         contentContainerStyle={styles.listContent}
@@ -166,6 +197,10 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     elevation: 2,
   },
+  monthBarEmpty: {
+    backgroundColor: "#262626",
+    opacity: 0.7,
+  },
   monthBarHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -177,9 +212,15 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#e2e8f0",
   },
+  monthBarTitleEmpty: {
+    color: "#64748b",
+  },
   monthBarValue: {
     fontSize: 18,
     fontWeight: "700",
+  },
+  monthBarValueEmpty: {
+    color: "#64748b",
   },
   positive: {
     color: "#22c55e",

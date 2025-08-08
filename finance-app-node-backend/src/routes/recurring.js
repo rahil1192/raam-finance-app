@@ -5,8 +5,32 @@ const router = express.Router();
 const { RecurringRule, Transaction } = require('../models');
 
 /**
- * GET /api/recurring/rules
- * Get all recurring rules
+ * @swagger
+ * /recurring/rules:
+ *   get:
+ *     summary: Get all recurring rules
+ *     description: Retrieves all recurring transaction rules
+ *     tags: [Recurring]
+ *     responses:
+ *       200:
+ *         description: Rules retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 rules:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/RecurringRule'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/rules', async (req, res) => {
   try {
@@ -36,8 +60,42 @@ router.get('/rules', async (req, res) => {
 });
 
 /**
- * POST /api/recurring/rules
- * Create a new recurring rule
+ * @swagger
+ * /recurring/rules:
+ *   post:
+ *     summary: Create a new recurring rule
+ *     description: Creates a new recurring transaction rule
+ *     tags: [Recurring]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CreateRecurringRuleRequest'
+ *     responses:
+ *       200:
+ *         description: Rule created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 rule:
+ *                   $ref: '#/components/schemas/RecurringRule'
+ *       400:
+ *         description: Bad request - missing required fields
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/rules', async (req, res) => {
   try {
@@ -78,8 +136,49 @@ router.post('/rules', async (req, res) => {
 });
 
 /**
- * PUT /api/recurring/rules/:id
- * Update a recurring rule
+ * @swagger
+ * /recurring/rules/{id}:
+ *   put:
+ *     summary: Update a recurring rule
+ *     description: Updates an existing recurring transaction rule
+ *     tags: [Recurring]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Rule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CreateRecurringRuleRequest'
+ *     responses:
+ *       200:
+ *         description: Rule updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 rule:
+ *                   $ref: '#/components/schemas/RecurringRule'
+ *       404:
+ *         description: Rule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.put('/rules/:id', async (req, res) => {
   try {
@@ -117,8 +216,43 @@ router.put('/rules/:id', async (req, res) => {
 });
 
 /**
- * DELETE /api/recurring/rules/:id
- * Delete a recurring rule
+ * @swagger
+ * /recurring/rules/{id}:
+ *   delete:
+ *     summary: Delete a recurring rule
+ *     description: Permanently deletes a recurring transaction rule
+ *     tags: [Recurring]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Rule ID
+ *     responses:
+ *       200:
+ *         description: Rule deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Rule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.delete('/rules/:id', async (req, res) => {
   try {
@@ -149,8 +283,52 @@ router.delete('/rules/:id', async (req, res) => {
 });
 
 /**
- * GET /api/recurring/patterns
- * Get recurring transaction patterns
+ * @swagger
+ * /recurring/patterns:
+ *   get:
+ *     summary: Get recurring transaction patterns
+ *     description: Analyzes transactions to identify recurring patterns and their characteristics
+ *     tags: [Recurring]
+ *     responses:
+ *       200:
+ *         description: Patterns analyzed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 patterns:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       merchant:
+ *                         type: string
+ *                       transaction_count:
+ *                         type: integer
+ *                       first_date:
+ *                         type: string
+ *                         format: date-time
+ *                       last_date:
+ *                         type: string
+ *                         format: date-time
+ *                       avg_interval_days:
+ *                         type: number
+ *                       pattern:
+ *                         type: string
+ *                         enum: [weekly, biweekly, monthly, unknown]
+ *                       total_amount:
+ *                         type: number
+ *                       avg_amount:
+ *                         type: number
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/patterns', async (req, res) => {
   try {
@@ -225,8 +403,30 @@ router.get('/patterns', async (req, res) => {
 });
 
 /**
- * POST /api/recurring/apply_rules
- * Apply recurring rules to transactions
+ * @swagger
+ * /recurring/apply_rules:
+ *   post:
+ *     summary: Apply recurring rules to transactions
+ *     description: Applies recurring rules to mark transactions as recurring based on merchant matching
+ *     tags: [Recurring]
+ *     responses:
+ *       200:
+ *         description: Rules applied successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/apply_rules', async (req, res) => {
   try {

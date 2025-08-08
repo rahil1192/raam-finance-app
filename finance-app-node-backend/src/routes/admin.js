@@ -2,11 +2,46 @@ const express = require('express');
 const router = express.Router();
 
 // Import models
-const { Transaction, Account, PlaidItem, CategoryMapping, RecurringRule } = require('../models');
+const { Transaction, Account, PlaidItem, RecurringRule, CategoryMapping } = require('../models');
 
 /**
- * POST /api/admin/clear_db
- * Clear all data from database
+ * @swagger
+ * /admin/clear_db:
+ *   post:
+ *     summary: Clear all database data
+ *     description: Clears all data from the database (transactions, accounts, Plaid items, etc.)
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: Database cleared successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 deleted_counts:
+ *                   type: object
+ *                   properties:
+ *                     transactions:
+ *                       type: integer
+ *                     accounts:
+ *                       type: integer
+ *                     plaid_items:
+ *                       type: integer
+ *                     recurring_rules:
+ *                       type: integer
+ *                     category_mappings:
+ *                       type: integer
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/clear_db', async (req, res) => {
   try {
@@ -32,8 +67,32 @@ router.post('/clear_db', async (req, res) => {
 });
 
 /**
- * DELETE /api/transactions/all
- * Delete all transactions
+ * @swagger
+ * /admin/transactions/all:
+ *   delete:
+ *     summary: Delete all transactions
+ *     description: Permanently deletes all transactions from the database
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: All transactions deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 deleted_count:
+ *                   type: integer
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.delete('/transactions/all', async (req, res) => {
   try {
@@ -54,8 +113,56 @@ router.delete('/transactions/all', async (req, res) => {
 });
 
 /**
- * POST /api/admin/trigger_update
- * Trigger manual update for Plaid items
+ * @swagger
+ * /admin/trigger_update:
+ *   post:
+ *     summary: Trigger manual update for Plaid items
+ *     description: Marks Plaid items for manual update to refresh their data
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               item_id:
+ *                 type: string
+ *                 description: Specific Plaid item ID to update (optional)
+ *               account_id:
+ *                 type: string
+ *                 description: Specific account ID to update (optional)
+ *     responses:
+ *       200:
+ *         description: Update triggered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       item_id:
+ *                         type: string
+ *                       institution_name:
+ *                         type: string
+ *                       status:
+ *                         type: string
+ *                       error:
+ *                         type: string
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/trigger_update', async (req, res) => {
   try {
@@ -115,8 +222,30 @@ router.post('/trigger_update', async (req, res) => {
 });
 
 /**
- * GET /api/admin/stats
- * Get system statistics
+ * @swagger
+ * /admin/stats:
+ *   get:
+ *     summary: Get system statistics
+ *     description: Returns comprehensive system statistics including counts and last sync times
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: Statistics retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 stats:
+ *                   $ref: '#/components/schemas/AdminStats'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/stats', async (req, res) => {
   try {

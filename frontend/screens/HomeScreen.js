@@ -163,13 +163,26 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
       const accounts = response.data || []
       console.log('📦 Fetched accounts data:', accounts);
 
+      // Ensure accounts is an array and add null checks
+      if (!Array.isArray(accounts)) {
+        console.warn('⚠️ Accounts data is not an array:', accounts);
+        setNetWorthData({
+          total: 0,
+          assets: 0,
+          liabilities: 0,
+          accounts: [],
+          creditCards: [],
+        });
+        return;
+      }
+
       // Separate accounts and credit cards
-      const depositoryAccounts = accounts.filter((acc) => acc.type === "depository")
-      const creditAccounts = accounts.filter((acc) => acc.type === "credit")
+      const depositoryAccounts = accounts.filter((acc) => acc && acc.type === "depository") || []
+      const creditAccounts = accounts.filter((acc) => acc && acc.type === "credit") || []
 
       // Calculate totals
-      const totalAssets = depositoryAccounts.reduce((sum, acc) => sum + (acc.current_balance || 0), 0)
-      const totalLiabilities = creditAccounts.reduce((sum, acc) => sum + (acc.current_balance || 0), 0)
+      const totalAssets = depositoryAccounts.reduce((sum, acc) => sum + (acc?.current_balance || 0), 0)
+      const totalLiabilities = creditAccounts.reduce((sum, acc) => sum + (acc?.current_balance || 0), 0)
       const totalNetWorth = totalAssets - totalLiabilities
 
       setNetWorthData({
@@ -177,19 +190,19 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
         assets: totalAssets,
         liabilities: totalLiabilities,
         accounts: depositoryAccounts.map((acc) => ({
-          id: acc.account_id,
-          name: acc.official_name || acc.name,
-          balance: acc.current_balance || 0,
-          type: acc.type,
-          subtype: acc.subtype,
+          id: acc?.account_id,
+          name: acc?.official_name || acc?.name || 'Unknown Account',
+          balance: acc?.current_balance || 0,
+          type: acc?.type,
+          subtype: acc?.subtype,
         })),
         creditCards: creditAccounts.map((acc) => ({
-          id: acc.account_id,
-          name: acc.official_name || acc.name,
-          balance: acc.current_balance || 0,
-          limit: acc.limit || 0,
-          type: acc.type,
-          subtype: acc.subtype,
+          id: acc?.account_id,
+          name: acc?.official_name || acc?.name || 'Unknown Account',
+          balance: acc?.current_balance || 0,
+          limit: acc?.limit || 0,
+          type: acc?.type,
+          subtype: acc?.subtype,
         })),
       })
     } catch (error) {

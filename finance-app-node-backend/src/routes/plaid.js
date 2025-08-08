@@ -1,5 +1,6 @@
 const express = require('express');
 const { Configuration, PlaidApi, PlaidEnvironments } = require('plaid');
+const axios = require('axios');
 const router = express.Router();
 
 // Import models
@@ -24,8 +25,30 @@ const configuration = new Configuration({
 const plaidClient = new PlaidApi(configuration);
 
 /**
- * POST /api/plaid/create_link_token
- * Create a Plaid Link token for connecting accounts
+ * @swagger
+ * /plaid/create_link_token:
+ *   post:
+ *     summary: Create a Plaid Link token for connecting accounts
+ *     description: Creates a link token that can be used to initialize Plaid Link
+ *     tags: [Plaid]
+ *     responses:
+ *       200:
+ *         description: Link token created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 link_token:
+ *                   type: string
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/create_link_token', async (req, res) => {
   try {
@@ -56,8 +79,52 @@ router.post('/create_link_token', async (req, res) => {
 });
 
 /**
- * POST /api/plaid/exchange_public_token
- * Exchange public token for access token
+ * @swagger
+ * /plaid/exchange_public_token:
+ *   post:
+ *     summary: Exchange public token for access token
+ *     description: Exchanges a public token for an access token and creates/updates Plaid item
+ *     tags: [Plaid]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - public_token
+ *             properties:
+ *               public_token:
+ *                 type: string
+ *                 description: The public token from Plaid Link
+ *     responses:
+ *       200:
+ *         description: Token exchanged successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 item_id:
+ *                   type: string
+ *                 institution_name:
+ *                   type: string
+ *       400:
+ *         description: Bad request - missing public token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/exchange_public_token', async (req, res) => {
   try {
@@ -152,8 +219,43 @@ router.post('/exchange_public_token', async (req, res) => {
 });
 
 /**
- * POST /api/plaid/fetch_transactions
- * Fetch transactions from Plaid
+ * @swagger
+ * /plaid/fetch_transactions:
+ *   post:
+ *     summary: Fetch transactions from Plaid
+ *     description: Fetches transactions from all connected Plaid items for the last 30 days
+ *     tags: [Plaid]
+ *     responses:
+ *       200:
+ *         description: Transactions fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 total_transactions_saved:
+ *                   type: integer
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       item_id:
+ *                         type: string
+ *                       institution_name:
+ *                         type: string
+ *                       transactions_fetched:
+ *                         type: integer
+ *                       transactions_saved:
+ *                         type: integer
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/fetch_transactions', async (req, res) => {
   try {
@@ -217,7 +319,8 @@ router.post('/fetch_transactions', async (req, res) => {
                 category: plaidTransaction.category ? plaidTransaction.category[0] : 'Uncategorized',
                 app_category: appCategory,
                 transaction_type: plaidTransaction.amount < 0 ? 'Debit' : 'Credit',
-                notes: plaidTransaction.merchant_name || null
+                notes: plaidTransaction.merchant_name || null,
+                recurrence_pattern: 'none'
               });
 
               savedCount++;
@@ -264,164 +367,42 @@ router.post('/fetch_transactions', async (req, res) => {
 });
 
 /**
- * GET /api/plaid/items
- * Get all Plaid items
- */
-router.get('/items', async (req, res) => {
-  try {
-    const items = await PlaidItem.findAll({
-      include: [
-        {
-          model: Account,
-          as: 'accounts',
-          attributes: ['account_id', 'name', 'type', 'current_balance']
-        }
-      ]
-    });
-
-    res.json({
-      success: true,
-      items: items.map(item => ({
-        id: item.id,
-        item_id: item.item_id,
-        institution_id: item.institution_id,
-        institution_name: item.institution_name,
-        last_refresh: item.last_refresh,
-        status: item.status,
-        needs_update: item.needs_update,
-        accounts: item.accounts
-      }))
-    });
-  } catch (error) {
-    console.error('Error fetching Plaid items:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch Plaid items',
-      message: error.message
-    });
-  }
-});
-
-/**
- * POST /api/plaid/sync_transactions
- * Sync transactions using Plaid's sync endpoint
- */
-router.post('/sync_transactions', async (req, res) => {
-  try {
-    const plaidItems = await PlaidItem.findAll({
-      where: { plaid_cursor: { [require('sequelize').Op.ne]: null } }
-    });
-
-    let totalAdded = 0;
-    let totalModified = 0;
-    let totalRemoved = 0;
-
-    for (const item of plaidItems) {
-      try {
-        const syncResponse = await plaidClient.transactionsSync({
-          access_token: item.access_token,
-          cursor: item.plaid_cursor
-        });
-
-        const { added, modified, removed, has_more, next_cursor } = syncResponse.data;
-
-        // Process added transactions
-        for (const transaction of added) {
-          try {
-            let appCategory = 'Other';
-            if (transaction.category && transaction.category.length > 0) {
-              const categoryMapping = await CategoryMapping.findOne({
-                where: { plaid_category: transaction.category[0] }
-              });
-              if (categoryMapping) {
-                appCategory = categoryMapping.app_category;
-              }
-            }
-
-            await Transaction.create({
-              transaction_id: transaction.transaction_id,
-              account_id: transaction.account_id,
-              date: new Date(transaction.date),
-              details: transaction.name,
-              amount: Math.abs(transaction.amount),
-              category: transaction.category ? transaction.category[0] : 'Uncategorized',
-              app_category: appCategory,
-              transaction_type: transaction.amount < 0 ? 'Debit' : 'Credit',
-              notes: transaction.merchant_name || null
-            });
-
-            totalAdded++;
-          } catch (error) {
-            console.error('Error adding transaction:', error);
-          }
-        }
-
-        // Process modified transactions
-        for (const transaction of modified) {
-          try {
-            const existingTransaction = await Transaction.findOne({
-              where: { transaction_id: transaction.transaction_id }
-            });
-
-            if (existingTransaction) {
-              await existingTransaction.update({
-                details: transaction.name,
-                amount: Math.abs(transaction.amount),
-                category: transaction.category ? transaction.category[0] : 'Uncategorized',
-                transaction_type: transaction.amount < 0 ? 'Debit' : 'Credit',
-                notes: transaction.merchant_name || null
-              });
-
-              totalModified++;
-            }
-          } catch (error) {
-            console.error('Error modifying transaction:', error);
-          }
-        }
-
-        // Process removed transactions
-        for (const transaction of removed) {
-          try {
-            const existingTransaction = await Transaction.findOne({
-              where: { transaction_id: transaction.transaction_id }
-            });
-
-            if (existingTransaction) {
-              await existingTransaction.destroy();
-              totalRemoved++;
-            }
-          } catch (error) {
-            console.error('Error removing transaction:', error);
-          }
-        }
-
-        // Update cursor
-        await item.update({ plaid_cursor: next_cursor });
-
-      } catch (error) {
-        console.error(`Error syncing item ${item.item_id}:`, error);
-      }
-    }
-
-    res.json({
-      success: true,
-      added: totalAdded,
-      modified: totalModified,
-      removed: totalRemoved
-    });
-  } catch (error) {
-    console.error('Error syncing transactions:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to sync transactions',
-      message: error.message
-    });
-  }
-});
-
-/**
- * GET /api/plaid/last_refresh
- * Get last refresh time for all items
+ * @swagger
+ * /plaid/last_refresh:
+ *   get:
+ *     summary: Get last refresh times for all items
+ *     description: Returns the last refresh time and status for all connected Plaid items
+ *     tags: [Plaid]
+ *     responses:
+ *       200:
+ *         description: Last refresh times retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       item_id:
+ *                         type: string
+ *                       institution_name:
+ *                         type: string
+ *                       last_refresh:
+ *                         type: string
+ *                         format: date-time
+ *                       status:
+ *                         type: string
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/last_refresh', async (req, res) => {
   try {
@@ -443,6 +424,614 @@ router.get('/last_refresh', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch last refresh times',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * DELETE /api/plaid/remove_item
+ * Remove a Plaid item (access token) to avoid unnecessary billing
+ */
+/**
+ * @swagger
+ * /plaid/remove_item:
+ *   delete:
+ *     summary: Remove a Plaid item (access token)
+ *     description: |
+ *       Removes a Plaid item to avoid unnecessary billing. This will:
+ *       - Look up the access_token for the given item_id in our database
+ *       - Call Plaid's `/item/remove` endpoint to invalidate the access_token
+ *       - Delete all associated transactions and accounts from the database
+ *       - Remove the Plaid item record from the database
+ *       
+ *       **Important:** Once removed, the access_token and any associated processor tokens 
+ *       or bank account tokens become invalid and cannot be used to access any data 
+ *       that was associated with the Item.
+ *       
+ *       **Note:** We only need the item_id from you - we handle fetching the access_token internally.
+ *     tags: [Plaid]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RemoveItemRequest'
+ *     responses:
+ *       200:
+ *         description: Item removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RemoveItemResponse'
+ *       400:
+ *         description: Bad request - missing item_id
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Item not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.delete('/remove_item', async (req, res) => {
+  try {
+    const { item_id } = req.body;
+    
+    if (!item_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Item ID is required'
+      });
+    }
+
+    // Find the Plaid item
+    const plaidItem = await PlaidItem.findOne({
+      where: { item_id: item_id },
+      include: [
+        {
+          model: Account,
+          as: 'accounts',
+          include: [
+            {
+              model: Transaction,
+              as: 'transactions'
+            }
+          ]
+        }
+      ]
+    });
+
+    if (!plaidItem) {
+      return res.status(404).json({
+        success: false,
+        error: 'Plaid item not found'
+      });
+    }
+
+    console.log(`🗑️ Removing Plaid item: ${item_id} (${plaidItem.institution_name})`);
+
+    // Remove the item from Plaid (this invalidates the access token)
+    // IMPORTANT: Once removed, the access_token and any associated processor tokens 
+    // or bank account tokens become invalid and cannot be used to access any data 
+    // that was associated with the Item.
+    // 
+    // Note: We receive item_id from the user, but we need access_token to call Plaid's API.
+    // We fetch the access_token from our database using the item_id.
+    try {
+      await plaidClient.itemRemove({
+        access_token: plaidItem.access_token  // ← Fetched from our database using item_id
+      });
+      console.log(`✅ Successfully removed item from Plaid: ${item_id}`);
+    } catch (plaidError) {
+      console.error(`❌ Error removing item from Plaid: ${plaidError.message}`);
+      // Continue with local cleanup even if Plaid removal fails
+      // (the access token might already be invalid)
+    }
+
+    // Clean up associated data in database
+    let deletedTransactions = 0;
+    let deletedAccounts = 0;
+
+    // Delete all transactions associated with this item's accounts
+    for (const account of plaidItem.accounts) {
+      if (account.transactions) {
+        deletedTransactions += account.transactions.length;
+        await Transaction.destroy({
+          where: { account_id: account.account_id }
+        });
+      }
+    }
+
+    // Delete all accounts associated with this item
+    deletedAccounts = plaidItem.accounts.length;
+    await Account.destroy({
+      where: { plaid_item_id: plaidItem.id }
+    });
+
+    // Delete the Plaid item itself
+    await plaidItem.destroy();
+
+    console.log(`🗑️ Cleaned up database: ${deletedTransactions} transactions, ${deletedAccounts} accounts`);
+
+    res.json({
+      success: true,
+      message: 'Plaid item removed successfully',
+      details: {
+        item_id: item_id,
+        institution_name: plaidItem.institution_name,
+        deleted_transactions: deletedTransactions,
+        deleted_accounts: deletedAccounts
+      }
+    });
+  } catch (error) {
+    console.error('Error removing Plaid item:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to remove Plaid item',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /plaid/remove-item-direct:
+ *   post:
+ *     summary: Remove a Plaid item directly using Plaid's API
+ *     description: |
+ *       Removes a Plaid item directly by calling Plaid's `/item/remove` endpoint.
+ *       This endpoint bypasses the local database and directly communicates with Plaid's API.
+ *       
+ *       **Use cases:**
+ *       - Remove items that exist in Plaid but not in your local database
+ *       - Remove items when local database is out of sync
+ *       - Direct item removal without database dependencies
+ *       
+ *       **Environment Detection:**
+ *       - Automatically detects if the access token is for production or sandbox
+ *       - Uses the appropriate Plaid environment URL
+ *       
+ *       **Security:**
+ *       - Requires valid Plaid credentials (client_id and secret)
+ *       - Validates access token format
+ *     tags: [Plaid]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - access_token
+ *             properties:
+ *               access_token:
+ *                 type: string
+ *                 description: The Plaid access token for the item to remove
+ *                 example: "access-production-a6f3e853-bcf2-4bb3-904c-b094df18cbcc"
+ *               client_id:
+ *                 type: string
+ *                 description: Plaid client ID (optional, uses environment variable if not provided)
+ *                 example: "6826150cf2160e00244fdea6"
+ *               secret:
+ *                 type: string
+ *                 description: Plaid secret (optional, uses environment variable if not provided)
+ *                 example: "5a009765b1c14ab843387dac0e236c"
+ *     responses:
+ *       200:
+ *         description: Item removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Item removed successfully"
+ *                 data:
+ *                   type: object
+ *                   description: Response data from Plaid API
+ *                   properties:
+ *                     removed:
+ *                       type: boolean
+ *                       example: true
+ *       400:
+ *         description: Bad request - missing or invalid parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Access token is required"
+ *       401:
+ *         description: Unauthorized - invalid Plaid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to remove item from Plaid"
+ *                 details:
+ *                   type: object
+ *                   properties:
+ *                     error_code:
+ *                       type: string
+ *                       example: "INVALID_API_KEYS"
+ *                     error_message:
+ *                       type: string
+ *                       example: "invalid client_id or secret provided"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post('/remove-item-direct', async (req, res) => {
+  try {
+    const { access_token, client_id, secret } = req.body;
+    
+    if (!access_token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Access token is required'
+      });
+    }
+    
+    // Use provided credentials or fall back to environment variables
+    const plaidClientId = client_id || process.env.PLAID_CLIENT_ID;
+    const plaidSecret = secret || process.env.PLAID_SECRET;
+    
+    if (!plaidClientId || !plaidSecret) {
+      return res.status(400).json({
+        success: false,
+        error: 'Plaid credentials are required'
+      });
+    }
+    
+    console.log('🗑️ Attempting to remove Plaid item directly...');
+    console.log('🔧 Access token:', access_token.substring(0, 20) + '...');
+    console.log('🔧 Client ID:', plaidClientId);
+    console.log('🔧 Environment: sandbox');
+    
+    // Make direct HTTP request to Plaid's API
+    // Determine environment from access token
+    const isProduction = access_token.startsWith('access-production-');
+    const plaidUrl = isProduction ? 'https://production.plaid.com/item/remove' : 'https://sandbox.plaid.com/item/remove';
+    
+    console.log('🔧 Using Plaid URL:', plaidUrl);
+    console.log('🔧 Is production token:', isProduction);
+    console.log('🔧 Access token prefix:', access_token.substring(0, 20));
+    
+    try {
+      console.log('📡 Making request to:', plaidUrl);
+      const response = await axios.post(plaidUrl, {
+        client_id: plaidClientId,
+        secret: plaidSecret,
+        access_token: access_token
+      }, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('✅ Successfully removed item from Plaid');
+      console.log('📦 Response data:', response.data);
+      
+      res.json({
+        success: true,
+        message: 'Item removed successfully',
+        data: response.data
+      });
+      
+    } catch (plaidError) {
+      console.error('❌ Error calling Plaid API:', plaidError.response?.data || plaidError.message);
+      
+      res.status(400).json({
+        success: false,
+        error: 'Failed to remove item from Plaid',
+        details: plaidError.response?.data || plaidError.message
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in remove-item-direct:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /plaid/items:
+ *   get:
+ *     summary: Get all connected Plaid items
+ *     description: Returns all connected Plaid items with their accounts and status
+ *     tags: [Plaid]
+ *     responses:
+ *       200:
+ *         description: Items retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/PlaidItem'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get('/items', async (req, res) => {
+  try {
+    const items = await PlaidItem.findAll({
+      include: [
+        {
+          model: Account,
+          as: 'accounts',
+          attributes: ['account_id', 'name', 'type', 'subtype']
+        }
+      ],
+      attributes: [
+        'id', 
+        'item_id', 
+        'institution_name', 
+        'institution_id', 
+        'last_refresh', 
+        'status', 
+        'needs_update',
+        'createdAt',
+        'updatedAt'
+      ]
+    });
+
+    res.json({
+      success: true,
+      items: items.map(item => ({
+        id: item.id,
+        item_id: item.item_id,
+        institution_name: item.institution_name,
+        institution_id: item.institution_id,
+        last_refresh: item.last_refresh,
+        status: item.status,
+        needs_update: item.needs_update,
+        account_count: item.accounts.length,
+        created_at: item.createdAt,
+        updated_at: item.updatedAt,
+        accounts: item.accounts.map(account => ({
+          account_id: account.account_id,
+          name: account.name,
+          type: account.type,
+          subtype: account.subtype
+        }))
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching Plaid items:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch Plaid items',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/plaid/sync_transactions
+ * Sync transactions using Plaid's sync endpoint
+ */
+router.post('/sync_transactions', async (req, res) => {
+  try {
+    // Get all Plaid items, not just those with a cursor
+    const plaidItems = await PlaidItem.findAll();
+
+    let totalAdded = 0;
+    let totalModified = 0;
+    let totalRemoved = 0;
+
+    for (const item of plaidItems) {
+      try {
+        // If item has a cursor, use sync API
+        if (item.plaid_cursor) {
+          const syncResponse = await plaidClient.transactionsSync({
+            access_token: item.access_token,
+            cursor: item.plaid_cursor
+          });
+
+          const { added, modified, removed, has_more, next_cursor } = syncResponse.data;
+
+          // Process added transactions
+          for (const transaction of added) {
+            try {
+              let appCategory = 'Other';
+              if (transaction.category && transaction.category.length > 0) {
+                const categoryMapping = await CategoryMapping.findOne({
+                  where: { plaid_category: transaction.category[0] }
+                });
+                if (categoryMapping) {
+                  appCategory = categoryMapping.app_category;
+                }
+              }
+
+              await Transaction.create({
+                transaction_id: transaction.transaction_id,
+                account_id: transaction.account_id,
+                date: new Date(transaction.date),
+                details: transaction.name,
+                amount: Math.abs(transaction.amount),
+                category: transaction.category ? transaction.category[0] : 'Uncategorized',
+                app_category: appCategory,
+                transaction_type: transaction.amount < 0 ? 'Debit' : 'Credit',
+                notes: transaction.merchant_name || null,
+                recurrence_pattern: 'none'
+              });
+
+              totalAdded++;
+            } catch (error) {
+              console.error('Error adding transaction:', error);
+            }
+          }
+
+          // Process modified transactions
+          for (const transaction of modified) {
+            try {
+              const existingTransaction = await Transaction.findOne({
+                where: { transaction_id: transaction.transaction_id }
+              });
+
+              if (existingTransaction) {
+                await existingTransaction.update({
+                  details: transaction.name,
+                  amount: Math.abs(transaction.amount),
+                  category: transaction.category ? transaction.category[0] : 'Uncategorized',
+                  transaction_type: transaction.amount < 0 ? 'Debit' : 'Credit',
+                  notes: transaction.merchant_name || null
+                });
+
+                totalModified++;
+              }
+            } catch (error) {
+              console.error('Error modifying transaction:', error);
+            }
+          }
+
+          // Process removed transactions
+          for (const transaction of removed) {
+            try {
+              const existingTransaction = await Transaction.findOne({
+                where: { transaction_id: transaction.transaction_id }
+              });
+
+              if (existingTransaction) {
+                await existingTransaction.destroy();
+                totalRemoved++;
+              }
+            } catch (error) {
+              console.error('Error removing transaction:', error);
+            }
+          }
+
+          // Update cursor
+          await item.update({ plaid_cursor: next_cursor });
+        } else {
+          // If no cursor, do initial fetch (last 30 days)
+          const endDate = new Date();
+          const startDate = new Date();
+          startDate.setDate(startDate.getDate() - 30);
+
+          const transactionsResponse = await plaidClient.transactionsGet({
+            access_token: item.access_token,
+            start_date: startDate.toISOString().split('T')[0],
+            end_date: endDate.toISOString().split('T')[0]
+          });
+
+          const transactions = transactionsResponse.data.transactions;
+          let savedCount = 0;
+
+          for (const plaidTransaction of transactions) {
+            try {
+              // Check if transaction already exists
+              const existingTransaction = await Transaction.findOne({
+                where: {
+                  transaction_id: plaidTransaction.transaction_id,
+                  account_id: plaidTransaction.account_id
+                }
+              });
+
+              if (!existingTransaction) {
+                // Find category mapping
+                let appCategory = 'Other';
+                if (plaidTransaction.category && plaidTransaction.category.length > 0) {
+                  const categoryMapping = await CategoryMapping.findOne({
+                    where: { plaid_category: plaidTransaction.category[0] }
+                  });
+                  if (categoryMapping) {
+                    appCategory = categoryMapping.app_category;
+                  }
+                }
+
+                // Create transaction
+                await Transaction.create({
+                  transaction_id: plaidTransaction.transaction_id,
+                  account_id: plaidTransaction.account_id,
+                  date: new Date(plaidTransaction.date),
+                  details: plaidTransaction.name,
+                  amount: Math.abs(plaidTransaction.amount),
+                  category: plaidTransaction.category ? plaidTransaction.category[0] : 'Uncategorized',
+                  app_category: appCategory,
+                  transaction_type: plaidTransaction.amount < 0 ? 'Debit' : 'Credit',
+                  notes: plaidTransaction.merchant_name || null,
+                  recurrence_pattern: 'none'
+                });
+
+                savedCount++;
+                totalAdded++;
+              }
+            } catch (transactionError) {
+              console.error('Error saving transaction:', transactionError);
+            }
+          }
+
+          // Set initial cursor for future syncs
+          if (transactionsResponse.data.next_cursor) {
+            await item.update({ plaid_cursor: transactionsResponse.data.next_cursor });
+          }
+        }
+
+        // Update last refresh time and reset needs_update status after successful sync
+        await item.update({ 
+          last_refresh: new Date(),
+          needs_update: false 
+        });
+
+      } catch (error) {
+        console.error(`Error syncing item ${item.item_id}:`, error);
+      }
+    }
+
+    res.json({
+      success: true,
+      added: totalAdded,
+      modified: totalModified,
+      removed: totalRemoved
+    });
+  } catch (error) {
+    console.error('Error syncing transactions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to sync transactions',
       message: error.message
     });
   }

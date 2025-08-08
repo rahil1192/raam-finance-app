@@ -3,8 +3,12 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
+const swaggerUi = require('swagger-ui-express');
 const job = require('./config/cron');
 require('dotenv').config();
+
+// Import Swagger specs
+const swaggerSpecs = require('./config/swagger');
 
 // Debug logging for environment variables
 console.log('Environment variables check:');
@@ -44,7 +48,7 @@ app.use(helmet());
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 200, // limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
@@ -92,6 +96,9 @@ app.use('/api/plaid', plaidRoutes);
 app.use('/api/recurring', recurringRoutes);
 app.use('/api/category_mappings', categoryRoutes);
 app.use('/api/admin', adminRoutes);
+
+// Swagger UI setup
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
 // Error handling middleware
 app.use((err, req, res, next) => {

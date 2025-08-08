@@ -45,7 +45,7 @@ export default function AddIncomeModal() {
   const [isTransfer, setIsTransfer] = useState(false);
   const [recurring, setRecurring] = useState(false);
   const [previousCategory, setPreviousCategory] = useState('');
-  const [recurrence, setRecurrence] = useState('none');
+  const [recurrence, setRecurrence] = useState(transaction?.recurrence_pattern || 'none');
   const [showRecurrencePicker, setShowRecurrencePicker] = useState(false);
 
   useEffect(() => {
@@ -58,10 +58,6 @@ export default function AddIncomeModal() {
       const response = await transactionService.getAccounts();
       if (response && Array.isArray(response)) {
         setAccounts(response);
-        // If we have a transaction and accounts are now loaded, process the transaction
-        if (transaction && response.length > 0) {
-          processTransactionWithAccounts(transaction, response);
-        }
       } else {
         console.error('Invalid accounts response:', response);
         setAccounts([]);
@@ -72,104 +68,77 @@ export default function AddIncomeModal() {
     }
   };
 
-  // Separate function to process transaction when accounts are available
-  const processTransactionWithAccounts = (transaction, accounts) => {
-    setAmount(Math.abs(transaction.amount).toString())
-    setCategory(transaction.app_category || transaction.category || "Income")
-    setCategoryCode(transaction.category_code || ""); // Initialize categoryCode
-    setMerchant(transaction.name || "Payer")
-    setNotes(transaction.notes || "")
-    
-    // Check if transaction is a transfer
-    const transferKeywords = ['transfer', 'move', 'send', 'receive', 'wire', 'ach'];
-    const details = transaction.details?.toLowerCase() || '';
-    const category = transaction.category?.toLowerCase() || '';
-    const isPlaidTransfer = transaction.category?.includes('TRANSFER') || 
-                           transaction.category?.includes('TRANSFER_IN') ||
-                           transaction.category?.includes('TRANSFER_OUT');
-    
-    const isTransferTransaction = category === 'transfers' || 
-                                 category === 'transfer' ||
-                                 isPlaidTransfer ||
-                                 transferKeywords.some(keyword => details.includes(keyword)) ||
-                                 transaction.transaction_type === 'Transfer';
-    
-    setIsTransfer(isTransferTransaction);
-    setRecurring(transaction.is_recurring || false);
-    setRecurrence(transaction.recurrence_pattern || 'none');
-    
-    // Fix date handling for existing transactions
-    let transactionDate = new Date();
-    if (transaction.originalDate) {
-      console.log('🔍 Original transaction.originalDate:', transaction.originalDate);
-      // Parse the originalDate string properly
-      if (typeof transaction.originalDate === 'string') {
-        const [year, month, day] = transaction.originalDate.split('-').map(Number);
-        console.log('🔍 Parsed originalDate components:', { year, month, day });
-        transactionDate = new Date(year, month - 1, day, 12, 0, 0);
-      } else {
-        transactionDate = new Date(transaction.originalDate);
-      }
-    } else if (transaction.date) {
-      // Handle different date formats from backend
-      console.log('🔍 Original transaction.date:', transaction.date);
-      console.log('🔍 Original transaction.date type:', typeof transaction.date);
-      console.log('🔍 Original transaction.date toISOString:', transaction.date?.toISOString?.());
-      
-      if (typeof transaction.date === 'string') {
-        // Parse the date string as local date to avoid timezone issues
-        const [year, month, day] = transaction.date.split('-').map(Number);
-        console.log('🔍 Parsed date components:', { year, month, day });
-        // Create date at noon local time to avoid timezone shifts
-        transactionDate = new Date(year, month - 1, day, 12, 0, 0);
-        console.log('🔍 Created transactionDate:', transactionDate);
-        console.log('🔍 transactionDate.toISOString():', transactionDate.toISOString());
-      } else if (transaction.date instanceof Date) {
-        console.log('🔍 transaction.date is a Date:', transaction.date);
-        transactionDate = transaction.date;
-      }
-      
-      // Check if the date is valid
-      if (isNaN(transactionDate.getTime())) {
-        console.warn('Invalid date received:', transaction.date);
-        transactionDate = new Date();
-      }
-    }
-    console.log('🔍 Final transactionDate:', transactionDate);
-    setDate(transactionDate);
-    
-    // Set selectedAccount with accounts now available
-    if (transaction.account_id) {
-      console.log('🔍 Setting selectedAccount from transaction:', transaction.account_id);
-      const found = accounts.find(acc => acc.account_id === transaction.account_id);
-      if (found) {
-        console.log('🔍 Found matching account:', found.name);
-        setSelectedAccount({ account_id: found.account_id, name: found.name });
-      } else {
-        console.log('🔍 No matching account found, creating placeholder');
-        setSelectedAccount({ account_id: transaction.account_id, name: 'Unknown Account' });
-      }
-    } else {
-      console.log('🔍 No account_id in transaction');
-      setSelectedAccount(null);
-    }
-  };
-
   useEffect(() => {
     if (transaction) {
-      // If accounts are already loaded, process immediately
-      if (accounts.length > 0) {
-        processTransactionWithAccounts(transaction, accounts);
-      } else {
-        // If accounts aren't loaded yet, create a placeholder
-        console.log('🔍 Accounts not loaded yet, creating placeholder');
-        setSelectedAccount({ account_id: transaction.account_id, name: 'Loading...' });
+      // Set all the transaction data directly
+      setAmount(Math.abs(transaction.amount).toString());
+      setCategory(transaction.app_category || transaction.category || "Income");
+      setCategoryCode(transaction.category_code || "");
+      setMerchant(transaction.name || "Payer");
+      setNotes(transaction.notes || "");
+      setRecurrence(transaction.recurrence_pattern || 'none');
+      setRecurring(transaction.is_recurring || false);
+      
+      // Handle date
+      let transactionDate = new Date();
+      if (transaction.originalDate) {
+        if (typeof transaction.originalDate === 'string') {
+          const [year, month, day] = transaction.originalDate.split('-').map(Number);
+          transactionDate = new Date(year, month - 1, day, 12, 0, 0);
+        } else {
+          transactionDate = new Date(transaction.originalDate);
+        }
+      } else if (transaction.date) {
+        if (typeof transaction.date === 'string') {
+          const [year, month, day] = transaction.date.split('-').map(Number);
+          transactionDate = new Date(year, month - 1, day, 12, 0, 0);
+        } else if (transaction.date instanceof Date) {
+          transactionDate = transaction.date;
+        }
       }
+      setDate(transactionDate);
+      
+      // Handle transfer detection
+      const transferKeywords = ['transfer', 'move', 'send', 'receive', 'wire', 'ach'];
+      const details = transaction.details?.toLowerCase() || '';
+      const category = transaction.category?.toLowerCase() || '';
+      const isPlaidTransfer = transaction.category?.includes('TRANSFER') || 
+                             transaction.category?.includes('TRANSFER_IN') ||
+                             transaction.category?.includes('TRANSFER_OUT');
+      
+      const isTransferTransaction = category === 'transfers' || 
+                                   category === 'transfer' ||
+                                   isPlaidTransfer ||
+                                   transferKeywords.some(keyword => details.includes(keyword)) ||
+                                   transaction.transaction_type === 'Transfer';
+      
+      setIsTransfer(isTransferTransaction);
     } else {
+      // Reset for new transaction
+      setAmount('');
+      setCategory('Select Category');
+      setCategoryCode('');
+      setMerchant('Select Merchant');
+      setNotes('');
+      setRecurrence('none');
+      setRecurring(false);
       setDate(new Date());
       setIsTransfer(false);
-      setRecurring(false);
       setSelectedAccount(null);
+    }
+  }, [transaction]);
+
+  // Handle account selection when accounts are loaded
+  useEffect(() => {
+    if (transaction && accounts.length > 0) {
+      if (transaction.account_id) {
+        const found = accounts.find(acc => acc.account_id === transaction.account_id);
+        if (found) {
+          setSelectedAccount({ account_id: found.account_id, name: found.name });
+        } else {
+          setSelectedAccount({ account_id: transaction.account_id, name: 'Unknown Account' });
+        }
+      }
     }
   }, [transaction, accounts]);
 

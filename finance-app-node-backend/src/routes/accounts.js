@@ -5,8 +5,32 @@ const router = express.Router();
 const { Account, PlaidItem } = require('../models');
 
 /**
- * GET /api/accounts
- * Get all accounts
+ * @swagger
+ * /accounts:
+ *   get:
+ *     summary: Get all accounts
+ *     description: Retrieves all accounts with their transaction counts and balances
+ *     tags: [Accounts]
+ *     responses:
+ *       200:
+ *         description: Accounts retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 accounts:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Account'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/', async (req, res) => {
   try {
@@ -50,8 +74,43 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * DELETE /api/accounts/:id
- * Delete an account
+ * @swagger
+ * /accounts/{id}:
+ *   delete:
+ *     summary: Delete an account
+ *     description: Permanently deletes an account and all its associated transactions
+ *     tags: [Accounts]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Account ID
+ *     responses:
+ *       200:
+ *         description: Account deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Account not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.delete('/:id', async (req, res) => {
   try {
@@ -95,6 +154,60 @@ router.delete('/:id', async (req, res) => {
  * PUT /api/accounts/:id
  * Update account details
  */
+/**
+ * @swagger
+ * /accounts/{id}:
+ *   put:
+ *     summary: Update an account
+ *     description: Updates account information
+ *     tags: [Accounts]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Account ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               official_name:
+ *                 type: string
+ *               available_balance:
+ *                 type: number
+ *               current_balance:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Account updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 account:
+ *                   $ref: '#/components/schemas/Account'
+ *       404:
+ *         description: Account not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -128,6 +241,48 @@ router.put('/:id', async (req, res) => {
 /**
  * GET /api/accounts/summary
  * Get account summary with balances
+ */
+/**
+ * @swagger
+ * /accounts/summary:
+ *   get:
+ *     summary: Get accounts summary
+ *     description: Returns a summary of all accounts with balances and transaction counts
+ *     tags: [Accounts]
+ *     responses:
+ *       200:
+ *         description: Summary retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     total_accounts:
+ *                       type: integer
+ *                     total_balance:
+ *                       type: number
+ *                     total_available_balance:
+ *                       type: number
+ *                     accounts_by_type:
+ *                       type: object
+ *                       additionalProperties:
+ *                         type: object
+ *                         properties:
+ *                           count:
+ *                             type: integer
+ *                           total_balance:
+ *                             type: number
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/summary', async (req, res) => {
   try {

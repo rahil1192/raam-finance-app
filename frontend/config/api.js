@@ -25,9 +25,6 @@ const determineApiUrl = () => {
   const isProductionBuild = process.env.NODE_ENV === 'production';
   console.log('🔧 Is production build:', isProductionBuild);
   
-  // For local development testing:
-
-  
   // If we're in development mode (local development)
   if (__DEV__ && !isProductionBuild) {
     // Try to use API_URL_DEV if available

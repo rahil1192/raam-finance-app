@@ -4,6 +4,10 @@ import { createStackNavigator } from "@react-navigation/stack"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { StatusBar } from "expo-status-bar"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
+
+// Test log for production builds
+console.log('🚀 App.js loaded - This log works in production builds!');
+
 import HomeScreen from "./screens/HomeScreen"
 import BillsScreen from "./screens/BillsScreen"
 import TransactionsScreen from "./screens/TransactionsScreen"

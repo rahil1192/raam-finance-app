@@ -169,6 +169,41 @@ export const plaidService = {
       throw error;
     }
   },
+
+  // Get all connected Plaid items
+  getItems: async () => {
+    try {
+      const response = await api.get('/plaid/items');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching Plaid items:', error);
+      throw error;
+    }
+  },
+
+  // Remove a Plaid item (access token) to avoid unnecessary billing
+  removeItem: async (itemId) => {
+    try {
+      const response = await api.delete('/plaid/remove_item', {
+        data: { item_id: itemId }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error removing Plaid item:', error);
+      throw error;
+    }
+  },
+
+  // Get last refresh times for all items
+  getLastRefresh: async () => {
+    try {
+      const response = await api.get('/plaid/last_refresh');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching last refresh times:', error);
+      throw error;
+    }
+  },
 };
 
 export default api; 
