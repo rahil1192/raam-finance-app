@@ -22,7 +22,7 @@ import { AntDesign } from '@expo/vector-icons';
 const TIME_RANGES = ['1M', '3M', '6M', 'YTD', '1Y', 'ALL'];
 
 export default function App({ navigation }) {
-  const { accounts, plaidItems, lastRefresh, refreshAccounts } = useAccounts();
+  const { accounts, plaidItems, lastRefresh, refreshAccounts, setAccounts } = useAccounts();
   
   // Debug logging for accounts
   console.log('🔍 AccountsScreen - accounts:', accounts);
@@ -41,8 +41,10 @@ export default function App({ navigation }) {
   const [lastRefreshMessage, setLastRefreshMessage] = useState('');
   const [expandedBanks, setExpandedBanks] = useState({});
   const [loadingNetWorth, setLoadingNetWorth] = useState(false);
-  const [tabTotals, setTabTotals] = useState({ netWorth: 0, cash: 0, credit: 0 });
+  const [tabTotals, setTabTotals] = useState({ netWorth: 0, cash: 0, credit: 0, mortgage: 0 });
   const [menuVisible, setMenuVisible] = useState(false);
+  const [showAllAccountsDuringRefresh, setShowAllAccountsDuringRefresh] = useState(false);
+  const [refreshingAccounts, setRefreshingAccounts] = useState(new Set());
 
   // Calculate net worth: sum of account balances (positive for assets, negative for liabilities)
   const calculateNetWorth = (accounts) => {
@@ -50,9 +52,13 @@ export default function App({ navigation }) {
     return accounts.reduce((sum, account) => {
       const balance = account.current_balance || 0;
       const subtype = (account.subtype || "").toLowerCase();
+      const type = (account.type || "").toLowerCase();
       
-      if (subtype.includes('credit')) {
+      if (subtype.includes('credit') || type.includes('credit')) {
         // Credit accounts are liabilities, so subtract their balance
+        return sum - balance;
+      } else if (subtype.includes('mortgage') || type.includes('loan')) {
+        // Mortgage accounts are liabilities, so subtract their balance
         return sum - balance;
       } else {
         // All other accounts are assets, so add their balance
@@ -78,7 +84,21 @@ export default function App({ navigation }) {
     if (!accounts || !Array.isArray(accounts)) return 0;
     return accounts.reduce((sum, account) => {
       const subtype = (account.subtype || '').toLowerCase();
-      if (subtype.includes('credit')) {
+      const type = (account.type || '').toLowerCase();
+      if (subtype.includes('credit') || type.includes('credit')) {
+        return sum + (account.current_balance || 0);
+      }
+      return sum;
+    }, 0);
+  };
+
+  // Calculate mortgage total (liabilities)
+  const calculateMortgage = (accounts) => {
+    if (!accounts || !Array.isArray(accounts)) return 0;
+    return accounts.reduce((sum, account) => {
+      const subtype = (account.subtype || '').toLowerCase();
+      const type = (account.type || '').toLowerCase();
+      if (subtype.includes('mortgage') || type.includes('loan')) {
         return sum + (account.current_balance || 0);
       }
       return sum;
@@ -91,6 +111,7 @@ export default function App({ navigation }) {
       netWorth: calculateNetWorth(accounts),
       cash: calculateCash(accounts),
       credit: calculateCredit(accounts),
+      mortgage: calculateMortgage(accounts),
     });
   }, [accounts]);
 
@@ -117,6 +138,23 @@ export default function App({ navigation }) {
     return (Date.now() - last.getTime()) > 24 * 60 * 60 * 1000;
   };
 
+  // Helper to check if account needs manual refresh (e.g., PRODUCT_NOT_READY errors)
+  const needsManualRefresh = (account) => {
+    // If account is currently being refreshed, don't show refresh button
+    if (refreshingAccounts.has(account.id)) {
+      return false;
+    }
+    
+    // Check if account has no transactions or very old last_updated
+    const lastUpdated = account.last_updated ? new Date(account.last_updated) : null;
+    const isOld = lastUpdated && (Date.now() - lastUpdated.getTime()) > 24 * 60 * 60 * 1000; // More than 24 hours
+    
+    // If account was updated recently (within last hour), it doesn't need refresh
+    const wasRecentlyUpdated = lastUpdated && (Date.now() - lastUpdated.getTime()) < 60 * 60 * 1000; // Less than 1 hour
+    
+    return !wasRecentlyUpdated && (isOld || !lastUpdated);
+  };
+
   // Centralized needsUpdate logic using plaidItems from context
   const needsUpdate = React.useMemo(() => {
     let plaidNeedsUpdate = false;
@@ -132,10 +170,25 @@ export default function App({ navigation }) {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     setLastRefreshMessage('');
+    setShowAllAccountsDuringRefresh(true); // Show all accounts during refresh
+    
+    // Expand all banks during refresh so users can see all accounts
+    if (accounts && Array.isArray(accounts)) {
+      const allBanks = {};
+      accounts.forEach(account => {
+        const bankName = account.plaid_item?.institution_name || 
+                        account.institution_name || 
+                        'Unknown Bank';
+        allBanks[bankName] = true;
+      });
+      setExpandedBanks(allBanks);
+    }
+    
     if (isStale()) {
       // needsUpdate is now derived from context
     }
     try {
+      // Always refresh all accounts regardless of selected tab
       await refreshAccounts();
       setLastRefreshMessage('Accounts refreshed successfully');
     } catch (error) {
@@ -143,8 +196,12 @@ export default function App({ navigation }) {
       setLastRefreshMessage('Error refreshing accounts');
     } finally {
       setRefreshing(false);
+      // After refresh is complete, wait a moment then hide the flag
+      setTimeout(() => {
+        setShowAllAccountsDuringRefresh(false);
+      }, 1000);
     }
-  }, [refreshAccounts]);
+  }, [refreshAccounts, accounts]);
 
   // Group accounts by institution
   const getFilteredAccounts = () => {
@@ -166,6 +223,75 @@ export default function App({ navigation }) {
       });
     }
     console.log('📊 Grouped accounts:', Object.keys(accountsByBank));
+    return accountsByBank;
+  };
+
+  // Get accounts filtered by selected tab
+  const getAccountsByTab = () => {
+    if (!accounts || !Array.isArray(accounts)) return {};
+    
+    const accountsByBank = {};
+    
+    accounts.forEach(account => {
+      const bankName = account.plaid_item?.institution_name || 
+                      account.institution_name || 
+                      'Unknown Bank';
+      
+      if (!accountsByBank[bankName]) {
+        accountsByBank[bankName] = [];
+      }
+      
+      // Filter accounts based on selected tab
+      let shouldInclude = false;
+      
+      // If refreshing, show all accounts temporarily
+      if (showAllAccountsDuringRefresh) {
+        accountsByBank[bankName].push(account);
+        return;
+      }
+      
+      switch (selectedTab) {
+        case 'NET WORTH':
+          // Include all accounts for net worth
+          shouldInclude = true;
+          break;
+        case 'CASH':
+          // Only include chequing/savings accounts
+          const subtype = (account.subtype || '').toLowerCase();
+          shouldInclude = subtype.includes('chequing') || 
+                         subtype.includes('checking') || 
+                         subtype.includes('savings');
+          break;
+        case 'CREDIT CARDS':
+          // Only include credit card accounts
+          const creditSubtype = (account.subtype || '').toLowerCase();
+          const creditType = (account.type || '').toLowerCase();
+          shouldInclude = creditSubtype.includes('credit') || 
+                         creditType.includes('credit');
+          break;
+        case 'MORTGAGE':
+          // Only include mortgage accounts
+          const mortgageSubtype = (account.subtype || '').toLowerCase();
+          const mortgageType = (account.type || '').toLowerCase();
+          shouldInclude = mortgageSubtype.includes('mortgage') || 
+                         mortgageType.includes('mortgage');
+          break;
+        default:
+          shouldInclude = true;
+      }
+      
+      if (shouldInclude) {
+        accountsByBank[bankName].push(account);
+      }
+    });
+    
+    // Remove banks with no accounts for the selected tab
+    Object.keys(accountsByBank).forEach(bank => {
+      if (accountsByBank[bank].length === 0) {
+        delete accountsByBank[bank];
+      }
+    });
+    
     return accountsByBank;
   };
 
@@ -202,7 +328,9 @@ export default function App({ navigation }) {
         return 'networth';
       case 'CASH':
         return 'assets';
-      case 'CREDIT':
+      case 'CREDIT CARDS':
+        return 'liabilities';
+      case 'MORTGAGE':
         return 'liabilities';
       default:
         return 'networth';
@@ -214,6 +342,7 @@ export default function App({ navigation }) {
   const handleMenuClose = () => setMenuVisible(false);
   const handleRefreshAll = async () => {
     setMenuVisible(false);
+    setShowAllAccountsDuringRefresh(true); // Show all accounts during refresh
     await onRefresh();
   };
   const handleViewInstitutionSettings = () => {
@@ -335,7 +464,7 @@ export default function App({ navigation }) {
 
       {/* Top Net Worth / Cash / Credit Cards Tabs with values */}
       <View style={styles.topTabsContainer}>
-        {['NET WORTH', 'CASH', 'CREDIT CARDS'].map(tab => (
+        {['NET WORTH', 'CASH', 'CREDIT CARDS', 'MORTGAGE'].map(tab => (
           <TouchableOpacity
             key={tab}
             style={[styles.topTab, selectedTab === tab && styles.topTabSelected]}
@@ -353,6 +482,7 @@ export default function App({ navigation }) {
             {selectedTab === 'NET WORTH' && `$${tabTotals.netWorth.toLocaleString(undefined, {minimumFractionDigits: 2})}`}
             {selectedTab === 'CASH' && `$${tabTotals.cash.toLocaleString(undefined, {minimumFractionDigits: 2})}`}
             {selectedTab === 'CREDIT CARDS' && `$${tabTotals.credit.toLocaleString(undefined, {minimumFractionDigits: 2})}`}
+            {selectedTab === 'MORTGAGE' && `$${tabTotals.mortgage.toLocaleString(undefined, {minimumFractionDigits: 2})}`}
           </Text>
           <Text style={styles.selectedTabTotalSubtextTopLeft}>$0.00 (0%) 1 month</Text>
         </View>
@@ -365,9 +495,27 @@ export default function App({ navigation }) {
         </View>
       ) : null}
 
+      {/* Show message when displaying all accounts during refresh */}
+      {showAllAccountsDuringRefresh && (
+        <View style={[styles.refreshMessage, { backgroundColor: '#FFF3CD' }]}>
+          <Text style={[styles.refreshMessageText, { color: '#856404' }]}>
+            🔄 Showing all accounts during refresh...
+          </Text>
+        </View>
+      )}
+
+      {/* Show message when accounts need manual refresh */}
+      {accounts && accounts.some(needsManualRefresh) && (
+        <View style={[styles.refreshMessage, { backgroundColor: '#FFE5E5' }]}>
+          <Text style={[styles.refreshMessageText, { color: '#D32F2F' }]}>
+            ⚠️ Some accounts need manual refresh (use 🔄 button) - this usually happens when accounts were connected but transactions weren't ready yet
+          </Text>
+        </View>
+      )}
+
       {/* Main Scrollable Content */}
       <FlatList
-        data={[{ key: 'header' }, ...Object.entries(getFilteredAccounts())]}
+        data={[{ key: 'header' }, ...Object.entries(getAccountsByTab())]}
         keyExtractor={(item) => item.key || item[0]}
         contentContainerStyle={styles.mainContent}
         renderItem={({ item }) => {
@@ -449,6 +597,95 @@ export default function App({ navigation }) {
                           </View>
                         )}
                         <Text style={styles.accountUpdated}>{account.last_updated ? new Date(account.last_updated).toLocaleDateString() : ''}</Text>
+                        
+                        {/* Manual refresh button for individual accounts */}
+                        <TouchableOpacity 
+                          style={[
+                            styles.refreshAccountButton,
+                            needsManualRefresh(account) && styles.refreshAccountButtonUrgent
+                          ]}
+                          onPress={async () => {
+                            try {
+                              // Ensure we have a valid account ID
+                              if (!account.id) {
+                                console.error('❌ Account has no ID:', account);
+                                setLastRefreshMessage('❌ Account ID missing');
+                                return;
+                              }
+                              
+                              console.log('🔄 Refreshing account:', {
+                                id: account.id,
+                                account_id: account.account_id,
+                                name: account.name,
+                                type: account.type,
+                                subtype: account.subtype
+                              });
+                              
+                              // Add account to refreshing set immediately
+                              setRefreshingAccounts(prev => new Set(prev).add(account.id));
+                              setLastRefreshMessage('Refreshing account...');
+                              
+                              // Update the account's last_updated immediately in local state
+                              const updatedAccounts = accounts.map(acc => 
+                                acc.id === account.id 
+                                  ? { ...acc, last_updated: new Date().toISOString() }
+                                  : acc
+                              );
+                              setAccounts(updatedAccounts);
+                              
+                              const refreshUrl = `${apiConfig.baseURL}/api/accounts/${account.id}/refresh`;
+                              console.log('🌐 Calling refresh endpoint:', refreshUrl);
+                              
+                              const response = await fetch(refreshUrl, {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json'
+                                }
+                              });
+                              
+                              console.log('📡 Refresh response status:', response.status);
+                              
+                              if (!response.ok) {
+                                const errorText = await response.text();
+                                console.error('❌ HTTP error:', response.status, errorText);
+                                throw new Error(`HTTP ${response.status}: ${errorText}`);
+                              }
+                              
+                              const result = await response.json();
+                              console.log('📡 Refresh response:', result);
+                              
+                              if (result.success) {
+                                setLastRefreshMessage(`✅ ${result.message}`);
+                                // Refresh all accounts to show updated data
+                                await refreshAccounts();
+                              } else {
+                                setLastRefreshMessage(`❌ Error: ${result.error}`);
+                                // Revert the local state change if refresh failed
+                                setAccounts(accounts);
+                              }
+                            } catch (error) {
+                              console.error('❌ Error refreshing account:', error);
+                              setLastRefreshMessage(`❌ Failed to refresh account: ${error.message}`);
+                              // Revert the local state change if refresh failed
+                              setAccounts(accounts);
+                            } finally {
+                              // Remove account from refreshing set
+                              setRefreshingAccounts(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(account.id);
+                                return newSet;
+                              });
+                            }
+                          }}
+                          disabled={refreshingAccounts.has(account.id)}
+                        >
+                          <Text style={[
+                            styles.refreshAccountButtonText,
+                            needsManualRefresh(account) && styles.refreshAccountButtonTextUrgent
+                          ]}>
+                            {refreshingAccounts.has(account.id) ? '⏳' : '🔄'}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -725,5 +962,22 @@ const styles = StyleSheet.create({
   noDataText: {
     color: '#888',
     fontSize: 16,
+  },
+  refreshAccountButton: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: '#E0E0E0',
+    marginLeft: 8,
+  },
+  refreshAccountButtonUrgent: {
+    backgroundColor: '#FFE5E5',
+  },
+  refreshAccountButtonText: {
+    fontSize: 18,
+    color: '#888',
+  },
+  refreshAccountButtonTextUrgent: {
+    color: '#FF3B30',
+    fontWeight: 'bold',
   },
 });

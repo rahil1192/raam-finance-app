@@ -62,7 +62,9 @@ export default function DailyTab({ transactions: propTransactions }) {
           transactions: [],
         }
       }
-      const amount = transaction.transaction_type === "Debit" ? -Math.abs(transaction.amount) : Math.abs(transaction.amount)
+      // Fix: Correct logic for transaction amounts
+      // Credit (money IN) = Positive, Debit (money OUT) = Negative
+      const amount = transaction.transaction_type === "Credit" ? Math.abs(transaction.amount) : -Math.abs(transaction.amount)
       const displayCategory = transaction.app_category || transaction.category || "Other"
       groups[date].transactions.push({
         id: transaction.id,

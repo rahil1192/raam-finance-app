@@ -70,9 +70,11 @@ export default function MerchantsTab({ transactions: propTransactions }) {
           iconBgColor: getMerchantColor(merchant)
         };
       }
-      const amount = txn.transaction_type === 'Debit'
-        ? -Math.abs(parseFloat(txn.amount))
-        : Math.abs(parseFloat(txn.amount));
+      // Fix: Correct logic for transaction amounts
+      // Credit (money IN) = Positive, Debit (money OUT) = Negative
+      const amount = txn.transaction_type === 'Credit'
+        ? Math.abs(parseFloat(txn.amount))
+        : -Math.abs(parseFloat(txn.amount));
       merchantMap[merchant].amount += amount;
       merchantMap[merchant].count += 1;
       merchantMap[merchant].transactions.push(txn);
