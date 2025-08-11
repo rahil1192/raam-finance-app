@@ -24,6 +24,7 @@ const plaidRoutes = require('./routes/plaid');
 const recurringRoutes = require('./routes/recurring');
 const categoryRoutes = require('./routes/categories');
 const adminRoutes = require('./routes/admin');
+const merchantCategoryMappingRoutes = require('./routes/merchantCategoryMapping');
 
 // Import database initialization
 const { initDatabase } = require('./models');
@@ -96,6 +97,7 @@ app.use('/api/plaid', plaidRoutes);
 app.use('/api/recurring', recurringRoutes);
 app.use('/api/category_mappings', categoryRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/merchant-category-mapping', merchantCategoryMappingRoutes);
 
 // Swagger UI setup
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));

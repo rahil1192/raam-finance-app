@@ -1,4 +1,4 @@
-const { CategoryMapping, MerchantCategoryRule } = require('../models');
+const { CategoryMapping, MerchantCategoryRule, MerchantCategoryMapping, sequelize } = require('../models');
 
 /**
  * Maps a Plaid personal finance category to an app category using the database
@@ -86,38 +86,136 @@ async function mapByMerchantRules(merchantName) {
   if (!merchantName) return null;
 
   try {
-    // First try exact matches
-    const exactRule = await MerchantCategoryRule.findOne({
+    // Use the new MerchantCategoryMapping system
+    // First try exact matches (highest priority)
+    const exactMatch = await MerchantCategoryMapping.findOne({
       where: {
-        merchant_pattern: merchantName.toLowerCase(),
-        exact_match: true,
+        merchant_name: merchantName,
         is_active: true
-      }
+      },
+      order: [['priority', 'DESC'], ['usage_count', 'DESC']]
     });
 
-    if (exactRule) {
-      return exactRule.category;
+    if (exactMatch) {
+      // Update usage count
+      await exactMatch.update({
+        usage_count: exactMatch.usage_count + 1,
+        last_used: new Date()
+      });
+      return exactMatch.app_category;
     }
 
-    // Then try partial matches
-    const partialRule = await MerchantCategoryRule.findOne({
+    // Then try pattern matches (regex)
+    const patternMatches = await MerchantCategoryMapping.findAll({
       where: {
-        merchant_pattern: {
-          [require('sequelize').Op.iLike]: `%${merchantName.toLowerCase()}%`
-        },
-        exact_match: false,
-        is_active: true
-      }
+        is_active: true,
+        merchant_pattern: sequelize.where(sequelize.col('merchant_pattern'), 'IS NOT', null)
+      },
+      order: [['priority', 'DESC'], ['usage_count', 'DESC']]
     });
 
-    if (partialRule) {
-      return partialRule.category;
+    let bestPatternMatch = null;
+    let bestScore = 0;
+
+    for (const mapping of patternMatches) {
+      try {
+        // Skip empty patterns
+        if (!mapping.merchant_pattern || mapping.merchant_pattern.trim() === '') {
+          continue;
+        }
+        
+        const regex = new RegExp(mapping.merchant_pattern, 'i');
+        if (regex.test(merchantName)) {
+          const score = mapping.priority * 10 + mapping.usage_count;
+          if (score > bestScore) {
+            bestScore = score;
+            bestPatternMatch = mapping;
+          }
+        }
+      } catch (regexError) {
+        console.warn(`Invalid regex pattern for mapping ${mapping.id}:`, mapping.merchant_pattern);
+      }
+    }
+
+    if (bestPatternMatch) {
+      // Update usage count
+      await bestPatternMatch.update({
+        usage_count: bestPatternMatch.usage_count + 1,
+        last_used: new Date()
+      });
+      return bestPatternMatch.app_category;
     }
 
     return null;
   } catch (error) {
     console.error('Error mapping by merchant rules:', error);
     return null;
+  }
+}
+
+/**
+ * Automatically creates a merchant-category mapping based on transaction data
+ * This allows the system to learn and improve categorization over time
+ * @param {string} merchantName - The merchant name
+ * @param {string} appCategory - The app category that was assigned
+ * @param {string} confidence - How confident we are in this mapping ('exact', 'pattern', 'fallback')
+ */
+async function autoCreateMerchantMapping(merchantName, appCategory, confidence = 'fallback') {
+  if (!merchantName || !appCategory) return;
+
+  try {
+    // Check if mapping already exists
+    const existingMapping = await MerchantCategoryMapping.findOne({
+      where: {
+        merchant_name: merchantName,
+        app_category: appCategory
+      }
+    });
+
+    if (existingMapping) {
+      // Update existing mapping usage
+      await existingMapping.update({
+        usage_count: existingMapping.usage_count + 1,
+        last_used: new Date()
+      });
+      return;
+    }
+
+    // Create new mapping with appropriate priority based on confidence
+    let priority = 1;
+    let description = '';
+
+    switch (confidence) {
+      case 'exact':
+        priority = 10;
+        description = 'Auto-created from exact merchant match';
+        break;
+      case 'pattern':
+        priority = 5;
+        description = 'Auto-created from pattern match';
+        break;
+      case 'fallback':
+        priority = 1;
+        description = 'Auto-created from fallback categorization';
+        break;
+      default:
+        priority = 1;
+        description = 'Auto-created mapping';
+    }
+
+    await MerchantCategoryMapping.create({
+      merchant_name: merchantName,
+      app_category: appCategory,
+      priority: priority,
+      description: description,
+      created_by: 'auto-system',
+      usage_count: 1,
+      last_used: new Date()
+    });
+
+    console.log(`✅ Auto-created merchant mapping: ${merchantName} → ${appCategory} (${confidence})`);
+  } catch (error) {
+    console.error('Error auto-creating merchant mapping:', error);
   }
 }
 
@@ -134,22 +232,36 @@ async function mapTransactionCategory(transaction) {
   if (merchantName) {
     const merchantRuleCategory = await mapByMerchantRules(merchantName);
     if (merchantRuleCategory) {
+      // Auto-create mapping for future use
+      await autoCreateMerchantMapping(merchantName, merchantRuleCategory, 'exact');
       return merchantRuleCategory;
     }
   }
 
   // Then check personal finance category
   if (transaction.personal_finance_category) {
-    return await mapPersonalFinanceCategory(transaction.personal_finance_category);
+    const category = await mapPersonalFinanceCategory(transaction.personal_finance_category);
+    if (merchantName) {
+      await autoCreateMerchantMapping(merchantName, category, 'pattern');
+    }
+    return category;
   }
 
   // Then check traditional category
   if (transaction.category && transaction.category.length > 0) {
-    return await mapPlaidCategory(transaction.category[0]);
+    const category = await mapPlaidCategory(transaction.category[0]);
+    if (merchantName) {
+      await autoCreateMerchantMapping(merchantName, category, 'pattern');
+    }
+    return category;
   }
 
   // Finally, fallback to merchant name analysis
-  return mapByMerchantName(merchantName || '');
+  const fallbackCategory = mapByMerchantName(merchantName || '');
+  if (merchantName) {
+    await autoCreateMerchantMapping(merchantName, fallbackCategory, 'fallback');
+  }
+  return fallbackCategory;
 }
 
 /**
@@ -241,5 +353,6 @@ module.exports = {
   mapPlaidCategory,
   mapTransactionCategory,
   mapByMerchantName,
-  mapByMerchantRules
+  mapByMerchantRules,
+  autoCreateMerchantMapping
 }; 

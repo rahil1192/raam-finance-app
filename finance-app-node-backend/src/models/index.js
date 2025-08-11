@@ -32,6 +32,7 @@ const PlaidItem = require('./PlaidItem')(sequelize);
 const CategoryMapping = require('./CategoryMapping')(sequelize);
 const RecurringRule = require('./RecurringRule')(sequelize);
 const MerchantCategoryRule = require('./MerchantCategoryRule')(sequelize);
+const MerchantCategoryMapping = require('./MerchantCategoryMapping')(sequelize);
 
 // Define associations
 Account.hasMany(Transaction, { 
@@ -58,13 +59,56 @@ const initDatabase = async () => {
     console.log('🔍 DATABASE_URL type:', DATABASE_URL.includes('postgresql') ? 'PostgreSQL' : 'SQLite');
     console.log('🔍 DATABASE_URL:', DATABASE_URL.substring(0, 20) + '...');
     
-    // Only sync for SQLite, skip for PostgreSQL since tables are manually created
-    if (DATABASE_URL.includes('sqlite')) {
-      console.log('🔄 Syncing SQLite database...');
-      await sequelize.sync({ alter: true });
-      console.log('✅ Database models synchronized.');
+    if (DATABASE_URL.includes('postgresql')) {
+      // For PostgreSQL, use a safer approach - only create missing tables
+      console.log('🔄 Checking PostgreSQL database for missing tables...');
+      
+      try {
+        // Check if merchant_category_mappings table exists
+        const tableExists = await sequelize.query(
+          "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'merchant_category_mappings')",
+          { type: sequelize.QueryTypes.SELECT }
+        );
+        
+        if (!tableExists[0].exists) {
+          console.log('🔄 Creating missing merchant_category_mappings table...');
+          await sequelize.query(`
+            CREATE TABLE merchant_category_mappings (
+              id SERIAL PRIMARY KEY,
+              merchant_name VARCHAR(255) NOT NULL,
+              merchant_pattern TEXT,
+              app_category VARCHAR(255) NOT NULL,
+              priority INTEGER DEFAULT 1,
+              is_active BOOLEAN DEFAULT true,
+              description TEXT,
+              created_by VARCHAR(255),
+              usage_count INTEGER DEFAULT 0,
+              last_used TIMESTAMP,
+              "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE INDEX idx_merchant_category_mappings_merchant_name ON merchant_category_mappings(merchant_name);
+            CREATE INDEX idx_merchant_category_mappings_app_category ON merchant_category_mappings(app_category);
+            CREATE INDEX idx_merchant_category_mappings_is_active ON merchant_category_mappings(is_active);
+            CREATE INDEX idx_merchant_category_mappings_priority ON merchant_category_mappings(priority);
+            CREATE UNIQUE INDEX unique_merchant_category ON merchant_category_mappings(merchant_name, app_category);
+          `);
+          console.log('✅ merchant_category_mappings table created successfully.');
+        } else {
+          console.log('✅ merchant_category_mappings table already exists.');
+        }
+        
+        console.log('✅ PostgreSQL database check completed.');
+      } catch (tableError) {
+        console.warn('⚠️ Could not create merchant_category_mappings table:', tableError.message);
+        console.log('ℹ️ The table may already exist or there may be permission issues.');
+      }
     } else {
-      console.log('✅ Using existing PostgreSQL tables (skipping sync).');
+      // For SQLite, use alter: true as it's safer
+      console.log('🔄 Syncing SQLite database with alter mode...');
+      await sequelize.sync({ alter: true });
+      console.log('✅ SQLite database models synchronized.');
     }
     
     return true;
@@ -82,5 +126,6 @@ module.exports = {
   PlaidItem,
   CategoryMapping,
   RecurringRule,
-  MerchantCategoryRule
+  MerchantCategoryRule,
+  MerchantCategoryMapping
 }; 

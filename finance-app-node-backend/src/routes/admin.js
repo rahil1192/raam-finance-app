@@ -4,6 +4,9 @@ const router = express.Router();
 // Import models
 const { Transaction, Account, PlaidItem, RecurringRule, CategoryMapping } = require('../models');
 
+// Import transaction filter configuration
+const TRANSACTION_FILTER_CONFIG = require('../config/transactionFilter');
+
 /**
  * @swagger
  * /admin/clear_db:
@@ -58,6 +61,74 @@ router.post('/clear_db', async (req, res) => {
     });
   } catch (error) {
     console.error('Error clearing database:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to clear database',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/clear_db_preserve_categories:
+ *   post:
+ *     summary: Clear database data while preserving category mappings
+ *     description: Clears all data from the database except category mappings (transactions, accounts, Plaid items, etc.)
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: Database cleared successfully (categories preserved)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 deleted_counts:
+ *                   type: object
+ *                   properties:
+ *                     transactions:
+ *                       type: integer
+ *                     accounts:
+ *                       type: integer
+ *                     plaid_items:
+ *                       type: integer
+ *                     recurring_rules:
+ *                       type: integer
+ *                     category_mappings:
+ *                       type: string
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post('/clear_db_preserve_categories', async (req, res) => {
+  try {
+    // Delete all data except category mappings, in order to respect foreign key constraints
+    const deletedTransactions = await Transaction.destroy({ where: {} });
+    const deletedAccounts = await Account.destroy({ where: {} });
+    const deletedPlaidItems = await PlaidItem.destroy({ where: {} });
+    const deletedRecurringRules = await RecurringRule.destroy({ where: {} });
+    
+    res.json({
+      success: true,
+      message: 'All data cleared successfully (category mappings preserved)',
+      deleted_counts: {
+        transactions: deletedTransactions,
+        accounts: deletedAccounts,
+        plaid_items: deletedPlaidItems,
+        recurring_rules: deletedRecurringRules,
+        category_mappings: 'preserved'
+      }
+    });
+  } catch (error) {
+    console.error('Error clearing database (preserving categories):', error);
     res.status(500).json({
       success: false,
       error: 'Failed to clear database',
@@ -299,6 +370,157 @@ router.get('/stats', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch admin stats',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/configure_transaction_filter:
+ *   post:
+ *     summary: Configure transaction date filtering
+ *     description: Sets the start date for transaction filtering (transactions before this date will be filtered out)
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               start_date:
+ *                 type: string
+ *                 format: date
+ *                 description: Start date in YYYY-MM-DD format (e.g., '2025-01-01')
+ *               enable_filtering:
+ *                 type: boolean
+ *                 description: Whether to enable date filtering
+ *     responses:
+ *       200:
+ *         description: Transaction filter configured successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 config:
+ *                   type: object
+ *                   properties:
+ *                     enableDateFiltering:
+ *                       type: boolean
+ *                     defaultStartDate:
+ *                       type: string
+ *                     maxDaysRequested:
+ *                       type: integer
+ *       400:
+ *         description: Invalid date format
+ *       500:
+ *         description: Server error
+ */
+router.post('/configure_transaction_filter', async (req, res) => {
+  try {
+    const { start_date, enable_filtering } = req.body;
+    
+    // Validate date format
+    if (start_date && !/^\d{4}-\d{2}-\d{2}$/.test(start_date)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid date format',
+        message: 'Date must be in YYYY-MM-DD format (e.g., "2025-01-01")'
+      });
+    }
+    
+    // Validate date is not in the future
+    if (start_date && new Date(start_date) > new Date()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid date',
+        message: 'Start date cannot be in the future'
+      });
+    }
+    
+    // Update the configuration (this would typically be stored in a database or config file)
+    // For now, we'll update the in-memory config
+    const plaidRoutes = require('./plaid');
+    
+    // Note: In a production environment, you'd want to store this in a database
+    // and reload the configuration when needed
+    if (typeof plaidRoutes.updateTransactionFilterConfig === 'function') {
+      plaidRoutes.updateTransactionFilterConfig({
+        enableDateFiltering: enable_filtering !== undefined ? enable_filtering : true,
+        defaultStartDate: start_date || '2025-01-01'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Transaction filter configured successfully',
+      config: {
+        enableDateFiltering: enable_filtering !== undefined ? enable_filtering : true,
+        defaultStartDate: start_date || '2025-01-01',
+        maxDaysRequested: TRANSACTION_FILTER_CONFIG.maxDaysRequested
+      }
+    });
+  } catch (error) {
+    console.error('Error configuring transaction filter:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to configure transaction filter',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/get_transaction_filter_config:
+ *   get:
+ *     summary: Get current transaction filter configuration
+ *     description: Returns the current configuration for transaction date filtering
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: Configuration retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 config:
+ *                   type: object
+ *                   properties:
+ *                     enableDateFiltering:
+ *                       type: boolean
+ *                     defaultStartDate:
+ *                       type: string
+ *                     maxDaysRequested:
+ *                       type: integer
+ *                     description:
+ *                       type: string
+ */
+router.get('/get_transaction_filter_config', async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      config: {
+        enableDateFiltering: TRANSACTION_FILTER_CONFIG.enableDateFiltering,
+        defaultStartDate: TRANSACTION_FILTER_CONFIG.defaultStartDate,
+        maxDaysRequested: TRANSACTION_FILTER_CONFIG.maxDaysRequested,
+        description: TRANSACTION_FILTER_CONFIG.description
+      }
+    });
+  } catch (error) {
+    console.error('Error getting transaction filter config:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get transaction filter config',
       message: error.message
     });
   }

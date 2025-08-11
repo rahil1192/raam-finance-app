@@ -523,11 +523,16 @@ router.post('/:id/category', async (req, res) => {
       });
     }
     
-    await transaction.update({ category });
+    // Update both category and app_category fields to ensure consistency
+    await transaction.update({ 
+      category: category,
+      app_category: category
+    });
     
     res.json({
       success: true,
-      transaction: transaction
+      transaction: transaction,
+      message: `Category updated to "${category}"`
     });
   } catch (error) {
     console.error('Error updating transaction category:', error);

@@ -351,4 +351,175 @@ router.get('/summary', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /accounts/{id}/refresh:
+ *   post:
+ *     summary: Manually refresh transactions for a specific account's Plaid item
+ *     description: Triggers a manual fetch of transactions for accounts associated with a specific Plaid item
+ *     tags: [Accounts]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Account ID
+ *     responses:
+ *       200:
+ *         description: Transactions refreshed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 results:
+ *                   type: object
+ *                   properties:
+ *                     transactions_fetched:
+ *                       type: integer
+ *                     transactions_saved:
+ *                       type: integer
+ *                     transactions_filtered:
+ *                       type: integer
+ *       404:
+ *         description: Account not found
+ *       500:
+ *         description: Server error
+ */
+router.post('/:id/refresh', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Find the account
+    const account = await Account.findByPk(id, {
+      include: [
+        {
+          model: PlaidItem,
+          as: 'plaid_item'
+        }
+      ]
+    });
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        error: 'Account not found'
+      });
+    }
+
+    if (!account.plaid_item) {
+      return res.status(400).json({
+        success: false,
+        error: 'Account is not associated with a Plaid item'
+      });
+    }
+
+    // Call the Plaid API directly instead of making an HTTP request to ourselves
+    const { Configuration, PlaidApi, PlaidEnvironments } = require('plaid');
+    
+    // Initialize Plaid client
+    const configuration = new Configuration({
+      basePath: PlaidEnvironments[process.env.PLAID_ENV === 'production' ? 'production' : 'sandbox'],
+      baseOptions: {
+        headers: {
+          'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
+          'PLAID-SECRET': process.env.PLAID_SECRET,
+        },
+      },
+    });
+    
+    const plaidClient = new PlaidApi(configuration);
+    
+    // Get transactions using configurable date filtering
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 730); // Default to 730 days back
+    
+    console.log(`📅 Manual refresh: Fetching transactions from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} for ${account.name}`);
+
+    const transactionsResponse = await plaidClient.transactionsGet({
+      access_token: account.plaid_item.access_token,
+      start_date: startDate.toISOString().split('T')[0],
+      end_date: endDate.toISOString().split('T')[0]
+    });
+
+    const transactions = transactionsResponse.data.transactions;
+    let savedCount = 0;
+    let filteredCount = 0;
+
+    // Import the Transaction model and category mapper
+    const { Transaction } = require('../models');
+    const { mapTransactionCategory } = require('../utils/categoryMapper');
+
+    for (const plaidTransaction of transactions) {
+      try {
+        // Check if transaction already exists
+        const existingTransaction = await Transaction.findOne({
+          where: {
+            transaction_id: plaidTransaction.transaction_id,
+            account_id: plaidTransaction.account_id
+          }
+        });
+
+        if (!existingTransaction) {
+          // Use the utility to map the transaction category
+          const appCategory = await mapTransactionCategory(plaidTransaction);
+
+          // Create transaction
+          await Transaction.create({
+            transaction_id: plaidTransaction.transaction_id,
+            account_id: plaidTransaction.account_id,
+            date: new Date(plaidTransaction.date),
+            details: plaidTransaction.name,
+            amount: Math.abs(plaidTransaction.amount), // Always store positive amount
+            category: plaidTransaction.category ? plaidTransaction.category[0] : 'Uncategorized',
+            app_category: appCategory,
+            // Fix: Plaid format: negative = credit (money in), positive = debit (money out)
+            transaction_type: plaidTransaction.amount < 0 ? 'Credit' : 'Debit',
+            notes: plaidTransaction.merchant_name || null,
+            recurrence_pattern: 'none'
+          });
+
+          savedCount++;
+        }
+      } catch (transactionError) {
+        console.error('Error saving transaction:', transactionError);
+      }
+    }
+
+    // Update the account's last_updated timestamp
+    await account.update({ last_updated: new Date() });
+
+    console.log(`✅ Manual refresh completed: ${savedCount} transactions saved, ${filteredCount} filtered out`);
+
+    res.json({
+      success: true,
+      message: `Successfully refreshed transactions for ${account.name}`,
+      account: {
+        id: account.id,
+        name: account.name,
+        last_updated: account.last_updated
+      },
+      results: {
+        transactions_fetched: transactions.length,
+        transactions_saved: savedCount,
+        transactions_filtered: filteredCount
+      }
+    });
+
+  } catch (error) {
+    console.error('Error refreshing account transactions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to refresh account transactions',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router; 

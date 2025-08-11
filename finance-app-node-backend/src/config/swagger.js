@@ -98,14 +98,74 @@ const options = {
           type: 'object',
           properties: {
             id: { type: 'integer' },
+            name: { type: 'string' },
             pattern: { type: 'string' },
-            description: { type: 'string' },
-            category: { type: 'string' },
             amount: { type: 'number' },
-            merchant: { type: 'string' },
+            category: { type: 'string' },
+            account_id: { type: 'string' },
             is_active: { type: 'boolean' },
             created_at: { type: 'string', format: 'date-time' },
             updated_at: { type: 'string', format: 'date-time' }
+          }
+        },
+        MerchantCategoryMapping: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer' },
+            merchant_name: { type: 'string' },
+            merchant_pattern: { type: 'string' },
+            app_category: { type: 'string' },
+            priority: { type: 'integer' },
+            is_active: { type: 'boolean' },
+            description: { type: 'string' },
+            created_by: { type: 'string' },
+            usage_count: { type: 'integer' },
+            last_used: { type: 'string', format: 'date-time' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' }
+          }
+        },
+        BulkAssignRequest: {
+          type: 'object',
+          required: ['partial_merchant_name', 'app_category'],
+          properties: {
+            partial_merchant_name: { 
+              type: 'string',
+              description: 'Partial merchant name to match (e.g., "LEVIO" will match "LEVIO CONSEILS", "PAY LEVIO", etc.)'
+            },
+            app_category: { 
+              type: 'string',
+              description: 'Category to assign to all matching merchants'
+            },
+            priority: { 
+              type: 'integer',
+              description: 'Priority level for the mappings (default 5)'
+            },
+            description: { 
+              type: 'string',
+              description: 'Description for the mappings'
+            }
+          }
+        },
+        BulkAssignResponse: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            mappings_created: { type: 'integer' },
+            mappings_updated: { type: 'integer' },
+            total_affected: { type: 'integer' },
+            details: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  merchant_name: { type: 'string' },
+                  app_category: { type: 'string' },
+                  action: { type: 'string' }
+                }
+              }
+            }
           }
         },
         CreateRecurringRuleRequest: {

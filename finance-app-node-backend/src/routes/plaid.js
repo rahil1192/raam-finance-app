@@ -9,6 +9,58 @@ const { PlaidItem, Account, Transaction, CategoryMapping, sequelize } = require(
 // Import category mapping utility
 const { mapTransactionCategory } = require('../utils/categoryMapper');
 
+// Import transaction filter configuration
+const TRANSACTION_FILTER_CONFIG = require('../config/transactionFilter');
+
+// Helper function to check if transaction should be included based on date filter
+function shouldIncludeTransaction(transactionDate, config = TRANSACTION_FILTER_CONFIG) {
+  if (!config.enableDateFiltering || !config.defaultStartDate) {
+    return true; // Include all transactions if filtering is disabled
+  }
+  
+  const transactionDateObj = new Date(transactionDate);
+  const startDateObj = new Date(config.defaultStartDate);
+  
+  return transactionDateObj >= startDateObj;
+}
+
+// Helper function to get filtered start date for Plaid API calls
+function getPlaidStartDate(config = TRANSACTION_FILTER_CONFIG) {
+  if (!config.enableDateFiltering || !config.defaultStartDate) {
+    // If no filtering, go back maxDaysRequested days
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - config.maxDaysRequested);
+    return startDate.toISOString().split('T')[0];
+  }
+  
+  // Use the configured start date, but ensure it's not more than maxDaysRequested days ago
+  const endDate = new Date();
+  const configuredStartDate = new Date(config.defaultStartDate);
+  const maxStartDate = new Date();
+  maxStartDate.setDate(maxStartDate.getDate() - config.maxDaysRequested);
+  
+  // Return the later of the two dates
+  return configuredStartDate > maxStartDate ? 
+    configuredStartDate.toISOString().split('T')[0] : 
+    maxStartDate.toISOString().split('T')[0];
+}
+
+// Function to update transaction filter configuration
+function updateTransactionFilterConfig(newConfig) {
+  if (newConfig.enableDateFiltering !== undefined) {
+    TRANSACTION_FILTER_CONFIG.enableDateFiltering = newConfig.enableDateFiltering;
+  }
+  if (newConfig.defaultStartDate !== undefined) {
+    TRANSACTION_FILTER_CONFIG.defaultStartDate = newConfig.defaultStartDate;
+  }
+  if (newConfig.maxDaysRequested !== undefined) {
+    TRANSACTION_FILTER_CONFIG.maxDaysRequested = newConfig.maxDaysRequested;
+  }
+  
+  console.log('🔧 Transaction filter configuration updated:', TRANSACTION_FILTER_CONFIG);
+}
+
 // Initialize Plaid client
 console.log('Initializing Plaid client with:');
 console.log('PLAID_ENV:', process.env.PLAID_ENV);
@@ -63,6 +115,9 @@ router.post('/create_link_token', async (req, res) => {
       products: ['transactions'],
       country_codes: ['US','CA'],
       language: 'en',
+      transactions: {
+        days_requested: 730  // Request up to 24 months (730 days) of transaction history
+      }
     };
 
     const createTokenResponse = await plaidClient.linkTokenCreate(request);
@@ -205,12 +260,102 @@ router.post('/exchange_public_token', async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      message: 'Account connected successfully',
-      item_id: itemId,
-      institution_name: institutionName
-    });
+    // 🔥 NEW: Automatically fetch transactions after account creation
+    console.log(`🔄 Auto-fetching transactions for newly connected account: ${institutionName}`);
+    
+    try {
+      // Get transactions using configurable date filtering
+      const endDate = new Date();
+      const startDate = getPlaidStartDate();
+
+      console.log(`📅 Auto-fetch: Fetching transactions from ${startDate} to ${endDate.toISOString().split('T')[0]} for ${institutionName}`);
+      console.log(`🔍 Date filtering enabled: ${TRANSACTION_FILTER_CONFIG.enableDateFiltering}, Start date: ${TRANSACTION_FILTER_CONFIG.defaultStartDate}`);
+
+      const transactionsResponse = await plaidClient.transactionsGet({
+        access_token: accessToken,
+        start_date: startDate,
+        end_date: endDate.toISOString().split('T')[0]
+      });
+
+      const transactions = transactionsResponse.data.transactions;
+      let savedCount = 0;
+      let filteredCount = 0;
+
+      for (const plaidTransaction of transactions) {
+        try {
+          // Apply date filtering
+          if (!shouldIncludeTransaction(plaidTransaction.date)) {
+            filteredCount++;
+            continue; // Skip this transaction
+          }
+
+          // Check if transaction already exists
+          const existingTransaction = await Transaction.findOne({
+            where: {
+              transaction_id: plaidTransaction.transaction_id,
+              account_id: plaidTransaction.account_id
+            }
+          });
+
+          if (!existingTransaction) {
+            // Use the utility to map the transaction category
+            const appCategory = await mapTransactionCategory(plaidTransaction);
+
+            // Create transaction
+            await Transaction.create({
+              transaction_id: plaidTransaction.transaction_id,
+              account_id: plaidTransaction.account_id,
+              date: new Date(plaidTransaction.date),
+              details: plaidTransaction.name,
+              amount: Math.abs(plaidTransaction.amount), // Always store positive amount
+              category: plaidTransaction.category ? plaidTransaction.category[0] : 'Uncategorized',
+              app_category: appCategory,
+              // Fix: Plaid format: negative = credit (money in), positive = debit (money out)
+              transaction_type: plaidTransaction.amount < 0 ? 'Credit' : 'Debit',
+              notes: plaidTransaction.merchant_name || null,
+              recurrence_pattern: 'none'
+            });
+
+            savedCount++;
+          }
+        } catch (transactionError) {
+          console.error('Error saving transaction during auto-fetch:', transactionError);
+        }
+      }
+
+      console.log(`✅ Auto-fetch completed: ${savedCount} transactions saved, ${filteredCount} filtered out by date`);
+
+      // Update last refresh time
+      await plaidItem.update({ last_refresh: new Date() });
+
+      res.json({
+        success: true,
+        message: 'Account connected successfully with transactions',
+        item_id: itemId,
+        institution_name: institutionName,
+        auto_fetch_results: {
+          transactions_fetched: transactions.length,
+          transactions_saved: savedCount,
+          transactions_filtered: filteredCount,
+          date_filtering: TRANSACTION_FILTER_CONFIG.enableDateFiltering,
+          start_date: TRANSACTION_FILTER_CONFIG.defaultStartDate
+        }
+      });
+
+    } catch (autoFetchError) {
+      console.error('Error during auto-fetch of transactions:', autoFetchError);
+      
+      // Still return success for account connection, but note the transaction fetch issue
+      res.json({
+        success: true,
+        message: 'Account connected successfully, but transaction fetch failed',
+        item_id: itemId,
+        institution_name: institutionName,
+        warning: 'Transactions could not be fetched automatically. Use /api/plaid/fetch_transactions to fetch them manually.',
+        error: autoFetchError.message
+      });
+    }
+
   } catch (error) {
     console.error('Error exchanging public token:', error);
     res.status(500).json({
@@ -226,7 +371,7 @@ router.post('/exchange_public_token', async (req, res) => {
  * /plaid/fetch_transactions:
  *   post:
  *     summary: Fetch transactions from Plaid
- *     description: Fetches transactions from all connected Plaid items from January 1, 2025 to today
+ *     description: Fetches transactions from all connected Plaid items from up to 24 months (730 days) ago to today
  *     tags: [Plaid]
  *     responses:
  *       200:
@@ -276,23 +421,31 @@ router.post('/fetch_transactions', async (req, res) => {
 
     for (const item of plaidItems) {
       try {
-        // Get transactions from January 1, 2025 to today for new accounts
+        // Get transactions using configurable date filtering
         const endDate = new Date();
-        const startDate = new Date('2025-01-01'); // Start from January 1, 2025
+        const startDate = getPlaidStartDate();
 
-        console.log(`📅 Fetching transactions from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} for ${item.institution_name}`);
+        console.log(`📅 Fetching transactions from ${startDate} to ${endDate.toISOString().split('T')[0]} for ${item.institution_name}`);
+        console.log(`🔍 Date filtering enabled: ${TRANSACTION_FILTER_CONFIG.enableDateFiltering}, Start date: ${TRANSACTION_FILTER_CONFIG.defaultStartDate}`);
 
         const transactionsResponse = await plaidClient.transactionsGet({
           access_token: item.access_token,
-          start_date: startDate.toISOString().split('T')[0],
+          start_date: startDate,
           end_date: endDate.toISOString().split('T')[0]
         });
 
         const transactions = transactionsResponse.data.transactions;
         let savedCount = 0;
+        let filteredCount = 0;
 
         for (const plaidTransaction of transactions) {
           try {
+            // Apply date filtering
+            if (!shouldIncludeTransaction(plaidTransaction.date)) {
+              filteredCount++;
+              continue; // Skip this transaction
+            }
+
             // Check if transaction already exists
             const existingTransaction = await Transaction.findOne({
               where: {
@@ -311,10 +464,11 @@ router.post('/fetch_transactions', async (req, res) => {
                 account_id: plaidTransaction.account_id,
                 date: new Date(plaidTransaction.date),
                 details: plaidTransaction.name,
-                amount: Math.abs(plaidTransaction.amount),
+                amount: Math.abs(plaidTransaction.amount), // Always store positive amount
                 category: plaidTransaction.category ? plaidTransaction.category[0] : 'Uncategorized',
                 app_category: appCategory,
-                transaction_type: plaidTransaction.amount < 0 ? 'Debit' : 'Credit',
+                // Fix: Plaid format: negative = credit (money in), positive = debit (money out)
+                transaction_type: plaidTransaction.amount < 0 ? 'Credit' : 'Debit',
                 notes: plaidTransaction.merchant_name || null,
                 recurrence_pattern: 'none'
               });
@@ -333,7 +487,10 @@ router.post('/fetch_transactions', async (req, res) => {
           item_id: item.item_id,
           institution_name: item.institution_name,
           transactions_fetched: transactions.length,
-          transactions_saved: savedCount
+          transactions_saved: savedCount,
+          transactions_filtered: filteredCount,
+          date_filtering: TRANSACTION_FILTER_CONFIG.enableDateFiltering,
+          start_date: TRANSACTION_FILTER_CONFIG.defaultStartDate
         });
 
         totalTransactions += savedCount;
@@ -856,8 +1013,8 @@ router.get('/items', async (req, res) => {
  *     description: |
  *       Syncs transactions from all connected Plaid items. This endpoint can:
  *       - Use incremental sync API for items with existing cursors (default behavior)
- *       - Force a full fetch from January 1, 2025 when force_full_fetch is true
- *       - Handle new items by fetching from January 1, 2025 to today
+ *       - Force a full fetch from up to 24 months (730 days) ago when force_full_fetch is true
+ *       - Handle new items by fetching from up to 24 months (730 days) ago to today
  *     tags: [Plaid]
  *     requestBody:
  *       required: false
@@ -870,7 +1027,7 @@ router.get('/items', async (req, res) => {
  *                 type: boolean
  *                 default: false
  *                 description: |
- *                   When true, clears all cursors and fetches transactions from January 1, 2025 to today.
+ *                   When true, clears all cursors and fetches transactions from up to 24 months (730 days) ago to today.
  *                   Use this when you want to refresh all historical data.
  *     responses:
  *       200:
@@ -920,7 +1077,7 @@ router.post('/sync_transactions', async (req, res) => {
           `, {
             replacements: { id: item.id }
           });
-          console.log(`🔄 Force full fetch: Cleared cursor for ${item.institution_name}`);
+          console.log(`🔄 Force full fetch: Cleared cursor for ${item.institution_name} (will fetch from up to 24 months ago)`);
         }
 
         // If item has a cursor, use sync API
@@ -943,10 +1100,11 @@ router.post('/sync_transactions', async (req, res) => {
                 account_id: transaction.account_id,
                 date: new Date(transaction.date),
                 details: transaction.name,
-                amount: Math.abs(transaction.amount),
+                amount: Math.abs(transaction.amount), // Always store positive amount
                 category: transaction.category ? transaction.category[0] : 'Uncategorized',
                 app_category: appCategory,
-                transaction_type: transaction.amount < 0 ? 'Debit' : 'Credit',
+                // Fix: Plaid format: negative = credit (money in), positive = debit (money out)
+                transaction_type: transaction.amount < 0 ? 'Credit' : 'Debit',
                 notes: transaction.merchant_name || null,
                 recurrence_pattern: 'none'
               });
@@ -967,9 +1125,10 @@ router.post('/sync_transactions', async (req, res) => {
               if (existingTransaction) {
                 await existingTransaction.update({
                   details: transaction.name,
-                  amount: Math.abs(transaction.amount),
+                  amount: Math.abs(transaction.amount), // Always store positive amount
                   category: transaction.category ? transaction.category[0] : 'Uncategorized',
-                  transaction_type: transaction.amount < 0 ? 'Debit' : 'Credit',
+                  // Fix: Plaid format: negative = credit (money in), positive = debit (money out)
+                  transaction_type: transaction.amount < 0 ? 'Credit' : 'Debit',
                   notes: transaction.merchant_name || null
                 });
 
@@ -1005,23 +1164,31 @@ router.post('/sync_transactions', async (req, res) => {
             replacements: { cursor: next_cursor, id: item.id }
           });
         } else {
-          // If no cursor, do initial fetch from January 1, 2025
+          // If no cursor, do initial fetch using configurable date filtering
           const endDate = new Date();
-          const startDate = new Date('2025-01-01'); // Start from January 1, 2025
+          const startDate = getPlaidStartDate();
 
-          console.log(`📅 Initial sync: Fetching transactions from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} for ${item.institution_name}`);
+          console.log(`📅 Initial sync: Fetching transactions from ${startDate} to ${endDate.toISOString().split('T')[0]} for ${item.institution_name}`);
+          console.log(`🔍 Date filtering enabled: ${TRANSACTION_FILTER_CONFIG.enableDateFiltering}, Start date: ${TRANSACTION_FILTER_CONFIG.defaultStartDate}`);
 
           const transactionsResponse = await plaidClient.transactionsGet({
             access_token: item.access_token,
-            start_date: startDate.toISOString().split('T')[0],
+            start_date: startDate,
             end_date: endDate.toISOString().split('T')[0]
           });
 
           const transactions = transactionsResponse.data.transactions;
           let savedCount = 0;
+          let filteredCount = 0;
 
           for (const plaidTransaction of transactions) {
             try {
+              // Apply date filtering
+              if (!shouldIncludeTransaction(plaidTransaction.date)) {
+                filteredCount++;
+                continue; // Skip this transaction
+              }
+
               // Check if transaction already exists
               const existingTransaction = await Transaction.findOne({
                 where: {
@@ -1055,6 +1222,8 @@ router.post('/sync_transactions', async (req, res) => {
               console.error('Error saving transaction:', transactionError);
             }
           }
+
+          console.log(`📊 Initial sync results: ${savedCount} saved, ${filteredCount} filtered out by date`);
 
           // Set initial cursor for future syncs
           if (transactionsResponse.data.next_cursor) {
@@ -1095,4 +1264,172 @@ router.post('/sync_transactions', async (req, res) => {
   }
 });
 
-module.exports = router; 
+/**
+ * @swagger
+ * /plaid/fetch_transactions_for_item:
+ *   post:
+ *     summary: Fetch transactions for a specific Plaid item
+ *     description: Fetches transactions for a specific Plaid item using configurable date filtering
+ *     tags: [Plaid]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - item_id
+ *             properties:
+ *               item_id:
+ *                 type: string
+ *                 description: The Plaid item ID to fetch transactions for
+ *     responses:
+ *       200:
+ *         description: Transactions fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 results:
+ *                   type: object
+ *                   properties:
+ *                     item_id:
+ *                       type: string
+ *                     institution_name:
+ *                       type: string
+ *                     transactions_fetched:
+ *                       type: integer
+ *                     transactions_saved:
+ *                       type: integer
+ *                     transactions_filtered:
+ *                       type: integer
+ *                     date_filtering:
+ *                       type: boolean
+ *                     start_date:
+ *                       type: string
+ *       400:
+ *         description: Bad request - missing item_id
+ *       404:
+ *         description: Plaid item not found
+ *       500:
+ *         description: Server error
+ */
+router.post('/fetch_transactions_for_item', async (req, res) => {
+  try {
+    const { item_id } = req.body;
+    
+    if (!item_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Item ID is required'
+      });
+    }
+
+    // Find the Plaid item
+    const plaidItem = await PlaidItem.findOne({
+      where: { item_id: item_id }
+    });
+
+    if (!plaidItem) {
+      return res.status(404).json({
+        success: false,
+        error: 'Plaid item not found'
+      });
+    }
+
+    // Get transactions using configurable date filtering
+    const endDate = new Date();
+    const startDate = getPlaidStartDate();
+
+    console.log(`📅 Manual fetch: Fetching transactions from ${startDate} to ${endDate.toISOString().split('T')[0]} for ${plaidItem.institution_name}`);
+    console.log(`🔍 Date filtering enabled: ${TRANSACTION_FILTER_CONFIG.enableDateFiltering}, Start date: ${TRANSACTION_FILTER_CONFIG.defaultStartDate}`);
+
+    const transactionsResponse = await plaidClient.transactionsGet({
+      access_token: plaidItem.access_token,
+      start_date: startDate,
+      end_date: endDate.toISOString().split('T')[0]
+    });
+
+    const transactions = transactionsResponse.data.transactions;
+    let savedCount = 0;
+    let filteredCount = 0;
+
+    for (const plaidTransaction of transactions) {
+      try {
+        // Apply date filtering
+        if (!shouldIncludeTransaction(plaidTransaction.date)) {
+          filteredCount++;
+          continue; // Skip this transaction
+        }
+
+        // Check if transaction already exists
+        const existingTransaction = await Transaction.findOne({
+          where: {
+            transaction_id: plaidTransaction.transaction_id,
+            account_id: plaidTransaction.account_id
+          }
+        });
+
+        if (!existingTransaction) {
+          // Use the utility to map the transaction category
+          const appCategory = await mapTransactionCategory(plaidTransaction);
+
+          // Create transaction
+          await Transaction.create({
+            transaction_id: plaidTransaction.transaction_id,
+            account_id: plaidTransaction.account_id,
+            date: new Date(plaidTransaction.date),
+            details: plaidTransaction.name,
+            amount: Math.abs(plaidTransaction.amount), // Always store positive amount
+            category: plaidTransaction.category ? plaidTransaction.category[0] : 'Uncategorized',
+            app_category: appCategory,
+            // Fix: Plaid format: negative = credit (money in), positive = debit (money out)
+            transaction_type: plaidTransaction.amount < 0 ? 'Credit' : 'Debit',
+            notes: plaidTransaction.merchant_name || null,
+            recurrence_pattern: 'none'
+          });
+
+          savedCount++;
+        }
+      } catch (transactionError) {
+        console.error('Error saving transaction:', transactionError);
+      }
+    }
+
+    // Update last refresh time
+    await plaidItem.update({ last_refresh: new Date() });
+
+    console.log(`✅ Manual fetch completed: ${savedCount} transactions saved, ${filteredCount} filtered out by date`);
+
+    res.json({
+      success: true,
+      message: 'Transactions fetched successfully',
+      results: {
+        item_id: plaidItem.item_id,
+        institution_name: plaidItem.institution_name,
+        transactions_fetched: transactions.length,
+        transactions_saved: savedCount,
+        transactions_filtered: filteredCount,
+        date_filtering: TRANSACTION_FILTER_CONFIG.enableDateFiltering,
+        start_date: TRANSACTION_FILTER_CONFIG.defaultStartDate
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching transactions for item:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch transactions for item',
+      message: error.message
+    });
+  }
+});
+
+module.exports = router;
+module.exports.updateTransactionFilterConfig = updateTransactionFilterConfig;
+module.exports.TRANSACTION_FILTER_CONFIG = TRANSACTION_FILTER_CONFIG; 
