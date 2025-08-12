@@ -21,7 +21,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons"
 import { FontAwesome5 } from "@expo/vector-icons"
 import { LineChart, BarChart } from "react-native-chart-kit"
 import axios from "axios"
-import { VictoryLine, VictoryChart, VictoryAxis, VictoryTheme, VictoryArea } from "victory-native"
 
 const { width } = Dimensions.get("window")
 const TIME_RANGES = ["1M", "3M", "6M", "YTD", "1Y", "ALL"]

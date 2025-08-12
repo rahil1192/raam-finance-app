@@ -22,6 +22,9 @@
         "API_URL_DEV": "https://raam-finance-app.onrender.com",
         "API_URL_PROD": "https://raam-finance-app.onrender.com",
         "EXPO_PUBLIC_OPTIMIZE_BUNDLE": "true"
+      },
+      "cache": {
+        "key": "preview-{{ platform }}-{{ hash }}"
       }
     },
     "production": {
@@ -33,6 +36,9 @@
         "API_URL_DEV": "https://raam-finance-app.onrender.com",
         "API_URL_PROD": "https://raam-finance-app.onrender.com",
         "EXPO_PUBLIC_OPTIMIZE_BUNDLE": "true"
+      },
+      "cache": {
+        "key": "production-{{ platform }}-{{ hash }}"
       }
     }
   },
