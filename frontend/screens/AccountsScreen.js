@@ -596,6 +596,15 @@ export default function App({ navigation }) {
                             <Text style={styles.warningText}>Needs Update</Text>
                           </View>
                         )}
+                        {/* Show reconnection warning if Plaid item needs reconnection */}
+                        {account.plaid_item && (account.plaid_item.status === 'ITEM_LOGIN_REQUIRED' || 
+                                               account.plaid_item.status === 'INVALID_ACCESS_TOKEN' || 
+                                               account.plaid_item.status === 'ITEM_ERROR') && (
+                          <View style={styles.reconnectionContainer}>
+                            <AntDesign name="exclamationcircle" size={16} color="#FF3B30" />
+                            <Text style={styles.reconnectionText}>Reconnection Required</Text>
+                          </View>
+                        )}
                         <Text style={styles.accountUpdated}>{account.last_updated ? new Date(account.last_updated).toLocaleDateString() : ''}</Text>
                         
                         {/* Manual refresh button for individual accounts */}
@@ -665,7 +674,51 @@ export default function App({ navigation }) {
                               }
                             } catch (error) {
                               console.error('❌ Error refreshing account:', error);
-                              setLastRefreshMessage(`❌ Failed to refresh account: ${error.message}`);
+                              
+                              // Try to parse error response for Plaid-specific errors
+                              let errorMessage = error.message;
+                              let requiresReconnection = false;
+                              
+                              try {
+                                // Check if error message contains JSON response
+                                if (error.message.includes('HTTP 400:')) {
+                                  const errorText = error.message.split('HTTP 400:')[1];
+                                  const errorData = JSON.parse(errorText);
+                                  
+                                  if (errorData.requires_reconnection) {
+                                    requiresReconnection = true;
+                                    errorMessage = errorData.message;
+                                    
+                                    // Show reconnection prompt
+                                    Alert.alert(
+                                      'Bank Connection Expired',
+                                      errorData.message,
+                                      [
+                                        {
+                                          text: 'Reconnect Now',
+                                          onPress: () => {
+                                            // Navigate to Plaid Link to reconnect
+                                            handlePlaidLink();
+                                          }
+                                        },
+                                        {
+                                          text: 'Later',
+                                          style: 'cancel'
+                                        }
+                                      ]
+                                    );
+                                  } else if (errorData.error === 'RATE_LIMIT_EXCEEDED') {
+                                    errorMessage = `Rate limit exceeded. Please wait ${errorData.retry_after || 60} seconds before trying again.`;
+                                  } else {
+                                    errorMessage = errorData.message || errorData.error;
+                                  }
+                                }
+                              } catch (parseError) {
+                                console.log('Could not parse error response, using default message');
+                              }
+                              
+                              setLastRefreshMessage(`❌ ${errorMessage}`);
+                              
                               // Revert the local state change if refresh failed
                               setAccounts(accounts);
                             } finally {
@@ -979,5 +1032,20 @@ const styles = StyleSheet.create({
   refreshAccountButtonTextUrgent: {
     color: '#FF3B30',
     fontWeight: 'bold',
+  },
+  reconnectionContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+    backgroundColor: '#FFE5E5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  reconnectionText: {
+    color: '#FF3B30',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 4,
   },
 });
