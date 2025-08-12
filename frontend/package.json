@@ -56,7 +56,11 @@
   "expo": {
     "doctor": {
       "reactNativeDirectoryCheck": {
-        "exclude": ["react-native-chart-kit", "cron", "react-native-vector-icons"]
+        "exclude": [
+          "react-native-chart-kit",
+          "cron",
+          "react-native-vector-icons"
+        ]
       }
     }
   },
