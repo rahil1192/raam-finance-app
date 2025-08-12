@@ -345,6 +345,55 @@ router.post('/exchange_public_token', async (req, res) => {
     } catch (autoFetchError) {
       console.error('Error during auto-fetch of transactions:', autoFetchError);
       
+      // Check if this is a Plaid-specific error
+      if (autoFetchError.response?.data) {
+        const plaidError = autoFetchError.response.data;
+        console.log('🔍 Plaid error during auto-fetch:', plaidError);
+        
+        // Handle specific Plaid error codes
+        if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
+          // Update the Plaid item status
+          try {
+            await plaidItem.update({ 
+              status: 'ITEM_LOGIN_REQUIRED',
+              needs_update: true 
+            });
+            console.log('✅ Updated Plaid item status to ITEM_LOGIN_REQUIRED');
+          } catch (updateError) {
+            console.error('❌ Failed to update Plaid item status:', updateError);
+          }
+          
+          return res.status(400).json({
+            success: false,
+            error: 'ITEM_LOGIN_REQUIRED',
+            message: 'Your bank connection has expired and needs to be re-authenticated. Please reconnect your account.',
+            requires_reconnection: true,
+            plaid_error: plaidError
+          });
+        }
+        
+        if (plaidError.error_code === 'INVALID_ACCESS_TOKEN') {
+          // Update the Plaid item status
+          try {
+            await plaidItem.update({ 
+              status: 'INVALID_ACCESS_TOKEN',
+              needs_update: true 
+            });
+            console.log('✅ Updated Plaid item status to INVALID_ACCESS_TOKEN');
+          } catch (updateError) {
+            console.error('❌ Failed to update Plaid item status:', updateError);
+          }
+          
+          return res.status(400).json({
+            success: false,
+            error: 'INVALID_ACCESS_TOKEN',
+            message: 'Your bank connection token has expired. Please reconnect your account.',
+            requires_reconnection: true,
+            plaid_error: plaidError
+          });
+        }
+      }
+      
       // Still return success for account connection, but note the transaction fetch issue
       res.json({
         success: true,
@@ -358,6 +407,53 @@ router.post('/exchange_public_token', async (req, res) => {
 
   } catch (error) {
     console.error('Error exchanging public token:', error);
+    
+    // Check if this is a Plaid-specific error
+    if (error.response?.data) {
+      const plaidError = error.response.data;
+      console.log('🔍 Plaid error during token exchange:', plaidError);
+      
+      // Handle specific Plaid error codes
+      if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
+        return res.status(400).json({
+          success: false,
+          error: 'ITEM_LOGIN_REQUIRED',
+          message: 'Your bank connection has expired and needs to be re-authenticated. Please reconnect your account.',
+          requires_reconnection: true,
+          plaid_error: plaidError
+        });
+      }
+      
+      if (plaidError.error_code === 'INVALID_ACCESS_TOKEN') {
+        return res.status(400).json({
+          success: false,
+          error: 'INVALID_ACCESS_TOKEN',
+          message: 'Your bank connection token has expired. Please reconnect your account.',
+          requires_reconnection: true,
+          plaid_error: plaidError
+        });
+      }
+      
+      if (plaidError.error_code === 'ITEM_ERROR') {
+        return res.status(400).json({
+          success: false,
+          error: 'ITEM_ERROR',
+          message: 'There was an issue with your bank connection. Please reconnect your account.',
+          requires_reconnection: true,
+          plaid_error: plaidError
+        });
+      }
+      
+      // Handle other Plaid errors
+      return res.status(400).json({
+        success: false,
+        error: 'PLAID_API_ERROR',
+        message: `Plaid API error: ${plaidError.error_message || plaidError.error_code}`,
+        plaid_error: plaidError
+      });
+    }
+    
+    // Handle non-Plaid errors
     res.status(500).json({
       success: false,
       error: 'Failed to exchange public token',
