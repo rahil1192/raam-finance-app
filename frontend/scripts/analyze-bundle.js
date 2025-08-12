@@ -54,8 +54,9 @@ console.log(`✅ Resource Shrinking: ${expo.android?.enableShrinkResourcesInRele
 const easJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'eas.json'), 'utf8'));
 
 console.log('\n🚀 EAS Build Configuration:');
-console.log(`✅ AAB Build Type: ${easJson.build.preview?.android?.buildType === 'aab' ? 'Enabled' : 'Disabled'}`);
-console.log(`✅ CPU Architecture Splitting: ${easJson.build.preview?.android?.enableSeparateBuildPerCPUArchitecture ? 'Enabled' : 'Disabled'}`);
+console.log(`✅ AAB Build Type: ${easJson.build.preview?.android?.buildType === 'app-bundle' ? 'Enabled' : 'Disabled'}`);
+console.log(`✅ Build Profile: ${easJson.build.preview ? 'Preview' : 'Not configured'}`);
+console.log(`✅ Production Profile: ${easJson.build.production ? 'Production' : 'Not configured'}`);
 
 console.log('\n📈 Expected Size Reduction:');
 console.log('• Hermes Engine: 20-30%');

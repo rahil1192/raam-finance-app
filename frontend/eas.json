@@ -15,9 +15,7 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "aab",
-        "enableSeparateBuildPerCPUArchitecture": true,
-        "gradleCommand": ":app:assembleRelease"
+        "buildType": "app-bundle"
       },
       "env": {
         "NODE_ENV": "production",
@@ -28,9 +26,7 @@
     },
     "production": {
       "android": {
-        "buildType": "aab",
-        "enableSeparateBuildPerCPUArchitecture": true,
-        "gradleCommand": ":app:assembleRelease"
+        "buildType": "app-bundle"
       },
       "env": {
         "NODE_ENV": "production",

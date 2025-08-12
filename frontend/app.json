@@ -26,8 +26,7 @@
       "package": "com.anonymous.financeapp",
       "jsEngine": "hermes",
       "enableProguardInReleaseBuilds": true,
-      "enableShrinkResourcesInReleaseBuilds": true,
-      "proguardFiles": "./proguard-rules.pro"
+      "enableShrinkResourcesInReleaseBuilds": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
