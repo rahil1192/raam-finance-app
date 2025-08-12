@@ -1526,6 +1526,126 @@ router.post('/fetch_transactions_for_item', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /plaid/create_update_link_token:
+ *   post:
+ *     summary: Create a Plaid Link token for updating existing accounts
+ *     description: Creates an update link token that can be used to re-authenticate existing Plaid connections
+ *     tags: [Plaid]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - item_id
+ *             properties:
+ *               item_id:
+ *                 type: string
+ *                 description: The Plaid item ID to update
+ *     responses:
+ *       200:
+ *         description: Update link token created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 link_token:
+ *                   type: string
+ *       400:
+ *         description: Bad request - missing item_id
+ *       404:
+ *         description: Plaid item not found
+ *       500:
+ *         description: Server error
+ */
+router.post('/create_update_link_token', async (req, res) => {
+  try {
+    const { item_id } = req.body;
+    
+    if (!item_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Item ID is required'
+      });
+    }
+
+    // Find the existing Plaid item
+    const plaidItem = await PlaidItem.findOne({
+      where: { item_id: item_id }
+    });
+
+    if (!plaidItem) {
+      return res.status(404).json({
+        success: false,
+        error: 'Plaid item not found'
+      });
+    }
+
+    // Create update link token for existing item
+    const request = {
+      user: {
+        client_user_id: 'user-id',
+      },
+      client_name: 'Finance App',
+      country_codes: ['US','CA'],
+      language: 'en',
+      access_token: plaidItem.access_token, // Use existing access token
+      update: {
+        account_selection_enabled: false // Don't allow account selection changes
+      }
+    };
+
+    const createTokenResponse = await plaidClient.linkTokenCreate(request);
+    
+    res.json({
+      success: true,
+      link_token: createTokenResponse.data.link_token,
+      item_id: item_id,
+      institution_name: plaidItem.institution_name
+    });
+  } catch (error) {
+    console.error('Error creating update link token:', error);
+    
+    // Check if this is a Plaid-specific error
+    if (error.response?.data) {
+      const plaidError = error.response.data;
+      console.log('🔍 Plaid error during update token creation:', plaidError);
+      
+      if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
+        return res.status(400).json({
+          success: false,
+          error: 'ITEM_LOGIN_REQUIRED',
+          message: 'Your bank connection has expired and needs to be re-authenticated. Please reconnect your account.',
+          requires_reconnection: true,
+          plaid_error: plaidError
+        });
+      }
+      
+      if (plaidError.error_code === 'INVALID_ACCESS_TOKEN') {
+        return res.status(400).json({
+          success: false,
+          error: 'INVALID_ACCESS_TOKEN',
+          message: 'Your bank connection token has expired. Please reconnect your account.',
+          requires_reconnection: true,
+          plaid_error: plaidError
+        });
+      }
+    }
+    
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create update link token',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;
 module.exports.updateTransactionFilterConfig = updateTransactionFilterConfig;
 module.exports.TRANSACTION_FILTER_CONFIG = TRANSACTION_FILTER_CONFIG; 
