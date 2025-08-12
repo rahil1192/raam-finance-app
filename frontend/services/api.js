@@ -136,6 +136,19 @@ export const accountService = {
   },
 };
 
+export const categoryService = {
+  // Get all categories with their custom icons
+  getCategoriesWithIcons: async () => {
+    try {
+      const response = await api.get('/category_mappings/with_icons');
+      return response.data.success ? response.data.categories : response.data;
+    } catch (error) {
+      console.error('Error fetching categories with icons:', error);
+      throw error;
+    }
+  },
+};
+
 export const plaidService = {
   // Create link token
   createLinkToken: async () => {

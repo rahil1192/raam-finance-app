@@ -1,12 +1,21 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  Alert,
+  Modal,
+  TextInput,
+  ScrollView,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from "@react-navigation/native"
-import React from "react"
-import { isTransferTransaction } from '../../utils/transactions'
-import { transactionService } from '../../services/api'
+import { transactionService } from '../../services/api';
+import { getCategoryIconSync, getCategoryColorSync, preloadCategories } from '../../utils/categoryIcons';
 
 export default function DailyTab({ transactions: propTransactions }) {
   const navigation = useNavigation()
@@ -17,12 +26,16 @@ export default function DailyTab({ transactions: propTransactions }) {
 
   useEffect(() => {
     if (propTransactions) {
-      processTransactions(propTransactions)
-      setLoading(false)
+      processTransactions(propTransactions);
+      setLoading(false);
     } else {
-      fetchTransactions()
+      fetchCategoryData();
     }
-  }, [propTransactions])
+    
+    // Preload category icons from backend
+    preloadCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propTransactions]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -69,8 +82,8 @@ export default function DailyTab({ transactions: propTransactions }) {
       groups[date].transactions.push({
         id: transaction.id,
         name: transaction.details,
-        icon: getTransactionIcon(displayCategory),
-        iconBgColor: getCategoryColor(displayCategory),
+        icon: getCategoryIconSync(displayCategory),
+        iconBgColor: getCategoryColorSync(displayCategory),
         amount: amount,
         category: displayCategory,
         date: date,
@@ -109,92 +122,6 @@ export default function DailyTab({ transactions: propTransactions }) {
     }
   }
 
-  const getTransactionIcon = (category) => {
-    const iconMap = {
-      Transfers: "swap-horizontal-outline",
-      Transfer: "swap-horizontal-outline",
-      "Food & Dining": "restaurant-outline",
-      "Restaurants & Bars": "wine-outline",
-      "Coffee Shops": "cafe-outline",
-      "Groceries": "basket-outline",
-      Shopping: "cart-outline",
-      Clothing: "shirt-outline",
-      "Travel & Vacation": "airplane-outline",
-      Gas: "car-sport-outline",
-      "Entertainment & Recreation": "film-outline",
-      Medical: "medkit-outline",
-      Dentist: "medkit-outline",
-      Fitness: "barbell-outline",
-      Insurance: "shield-checkmark-outline",
-      "Loan Repayment": "cash-outline",
-      "Credit Card Payment": "card-outline",
-      "Student Loans": "school-outline",
-      "Business Income": "briefcase-outline",
-      Paycheck: "cash-outline",
-      Interest: "trending-up-outline",
-      Charity: "heart-outline",
-      Gifts: "gift-outline",
-      Pets: "paw-outline",
-      "Child Care": "happy-outline",
-      Education: "school-outline",
-      "Home Improvement": "home-outline",
-      Rent: "home-outline",
-      Mortgage: "home-outline",
-      Water: "water-outline",
-      "Gas & Electric": "flash-outline",
-      "Internet & Cable": "wifi-outline",
-      Phone: "call-outline",
-      "Cash & ATM": "cash-outline",
-      "Financial & Legal Services": "briefcase-outline",
-      Other: "ellipsis-horizontal-outline",
-      // Add more as needed
-    }
-    return iconMap[category] || iconMap.Other
-  }
-
-  const getCategoryColor = (category) => {
-    const colorMap = {
-      Transfers: "#8b5cf6",
-      Transfer: "#8b5cf6",
-      "Food & Dining": "#22c55e",
-      "Restaurants & Bars": "#f59e0b",
-      "Coffee Shops": "#b45309",
-      "Groceries": "#84cc16",
-      Shopping: "#f59e0b",
-      Clothing: "#f472b6",
-      "Travel & Vacation": "#14b8a6",
-      Gas: "#fbbf24",
-      "Entertainment & Recreation": "#ec4899",
-      Medical: "#ef4444",
-      Dentist: "#f87171",
-      Fitness: "#10b981",
-      Insurance: "#6366f1",
-      "Loan Repayment": "#a855f7",
-      "Credit Card Payment": "#eab308",
-      "Student Loans": "#6366f1",
-      "Business Income": "#06b6d4",
-      Paycheck: "#22d3ee",
-      Interest: "#0ea5e9",
-      Charity: "#f43f5e",
-      Gifts: "#a855f7",
-      Pets: "#fbbf24",
-      "Child Care": "#f472b6",
-      Education: "#6366f1",
-      "Home Improvement": "#f59e42",
-      Rent: "#f59e42",
-      Mortgage: "#f59e42",
-      Water: "#38bdf8",
-      "Gas & Electric": "#fde68a",
-      "Internet & Cable": "#818cf8",
-      Phone: "#818cf8",
-      "Cash & ATM": "#fbbf24",
-      "Financial & Legal Services": "#06b6d4",
-      Other: "#64748b",
-      // Add more as needed
-    }
-    return colorMap[category] || colorMap.Other
-  }
-
   const handleTransactionPress = (transaction) => {
     let transactionType = "AddExpense"
     if (transaction.category === "Income" || transaction.amount > 0) {
@@ -216,7 +143,7 @@ export default function DailyTab({ transactions: propTransactions }) {
             return { ...group, transactions: [], total: 0 };
           }
           const filteredTransactions = group.transactions.filter((transaction) => {
-            const isTransfer = isTransferTransaction(transaction);
+            const isTransfer = transaction.category === "Transfers";
             if (isTransfer) {
               console.log("Found transfer:", transaction.details, transaction.category);
             }
@@ -240,7 +167,7 @@ export default function DailyTab({ transactions: propTransactions }) {
         }
         const filteredTransactions = group.transactions.filter((transaction) => {
           // Exclude transfers from expense and income calculations
-          if (isTransferTransaction(transaction)) {
+          if (transaction.category === "Transfers") {
             return false
           }
           if (activeFilter === "Expenses") return transaction.amount < 0
@@ -265,7 +192,7 @@ export default function DailyTab({ transactions: propTransactions }) {
     let amountColor = "white";
     let indicatorColor = "#f59e0b";
     
-    if (isTransferTransaction(item)) {
+    if (item.category === "Transfers") {
       // Use purple for transfers
       amountColor = "#8b5cf6";
       indicatorColor = "#8b5cf6";
