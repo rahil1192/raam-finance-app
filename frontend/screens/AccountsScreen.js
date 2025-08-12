@@ -422,6 +422,62 @@ export default function App({ navigation }) {
     }
   };
 
+  // Handle reconnection for existing accounts (uses update mode, not create mode)
+  const handleReconnection = async (account) => {
+    console.log('🔄 Reconnecting account:', account.name);
+    
+    if (!account.plaid_item?.item_id) {
+      console.error('❌ No Plaid item ID found for account:', account.name);
+      setLastRefreshMessage('Error: Cannot reconnect account - missing Plaid item ID');
+      return;
+    }
+
+    try {
+      console.log('🚀 Creating update link token for item:', account.plaid_item.item_id);
+      
+      const response = await plaidService.createUpdateLinkToken(account.plaid_item.item_id);
+      console.log('✅ Update link token response:', response);
+      
+      const linkToken = response.link_token;
+      if (!linkToken) {
+        console.error('❌ No update link token received');
+        setLastRefreshMessage('Error: No update link token received');
+        return;
+      }
+
+      console.log('🔓 Creating Plaid Link in UPDATE mode...');
+      create({ token: linkToken });
+      
+      console.log('🚪 Opening Plaid Link in update mode...');
+      open({
+        onSuccess: async (result) => {
+          console.log('✅ Plaid Link update success:', result);
+          setLastRefreshMessage('Successfully reconnected to bank');
+          try {
+            console.log('🔄 Exchanging public token...');
+            await plaidService.exchangePublicToken(result.publicToken);
+            console.log('✅ Public token exchanged successfully');
+            await refreshAccounts();
+            console.log('✅ Accounts refreshed');
+          } catch (error) {
+            console.error('❌ Error exchanging public token:', error);
+            setLastRefreshMessage('Error reconnecting to bank');
+          }
+        },
+        onExit: (result) => {
+          console.log('🚪 Plaid Link update exited:', result);
+          if (result.error) {
+            console.error('❌ Plaid Link update error:', result.error);
+            setLastRefreshMessage(`Error: ${result.error.displayMessage || 'Could not reconnect to bank'}`);
+          }
+        },
+      });
+    } catch (error) {
+      console.error('❌ Error creating update link token:', error);
+      setLastRefreshMessage('Error: Could not create update link token');
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: '#FAF9F6' }}>
       {/* Header */}
@@ -603,6 +659,12 @@ export default function App({ navigation }) {
                           <View style={styles.reconnectionContainer}>
                             <AntDesign name="exclamationcircle" size={16} color="#FF3B30" />
                             <Text style={styles.reconnectionText}>Reconnection Required</Text>
+                            <TouchableOpacity 
+                              style={styles.reconnectButton}
+                              onPress={() => handleReconnection(account)}
+                            >
+                              <Text style={styles.reconnectButtonText}>Reconnect</Text>
+                            </TouchableOpacity>
                           </View>
                         )}
                         <Text style={styles.accountUpdated}>{account.last_updated ? new Date(account.last_updated).toLocaleDateString() : ''}</Text>
@@ -698,7 +760,7 @@ export default function App({ navigation }) {
                                           text: 'Reconnect Now',
                                           onPress: () => {
                                             // Navigate to Plaid Link to reconnect
-                                            handlePlaidLink();
+                                            handleReconnection(account);
                                           }
                                         },
                                         {
@@ -1047,5 +1109,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     marginLeft: 4,
+  },
+  reconnectButton: {
+    backgroundColor: '#FF3B30',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  reconnectButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });

@@ -148,6 +148,17 @@ export const plaidService = {
     }
   },
 
+  // Create update link token for existing connections
+  createUpdateLinkToken: async (itemId) => {
+    try {
+      const response = await api.post('/plaid/create_update_link_token', { item_id: itemId });
+      return response.data;
+    } catch (error) {
+      console.error('Error creating update link token:', error);
+      throw error;
+    }
+  },
+
   // Exchange public token
   exchangePublicToken: async (publicToken) => {
     try {
