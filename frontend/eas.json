@@ -14,17 +14,29 @@
     },
     "preview": {
       "distribution": "internal",
+      "android": {
+        "buildType": "aab",
+        "enableSeparateBuildPerCPUArchitecture": true,
+        "gradleCommand": ":app:assembleRelease"
+      },
       "env": {
         "NODE_ENV": "production",
         "API_URL_DEV": "https://raam-finance-app.onrender.com",
-        "API_URL_PROD": "https://raam-finance-app.onrender.com"
+        "API_URL_PROD": "https://raam-finance-app.onrender.com",
+        "EXPO_PUBLIC_OPTIMIZE_BUNDLE": "true"
       }
     },
     "production": {
+      "android": {
+        "buildType": "aab",
+        "enableSeparateBuildPerCPUArchitecture": true,
+        "gradleCommand": ":app:assembleRelease"
+      },
       "env": {
         "NODE_ENV": "production",
         "API_URL_DEV": "https://raam-finance-app.onrender.com",
-        "API_URL_PROD": "https://raam-finance-app.onrender.com"
+        "API_URL_PROD": "https://raam-finance-app.onrender.com",
+        "EXPO_PUBLIC_OPTIMIZE_BUNDLE": "true"
       }
     }
   },
