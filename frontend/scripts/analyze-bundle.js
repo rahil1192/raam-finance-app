@@ -32,8 +32,7 @@ const devDeps = packageJson.devDependencies || {};
 
 console.log('\n📦 Optimization Dependencies:');
 const optimizationDeps = [
-  '@babel/plugin-transform-runtime',
-  'babel-plugin-transform-remove-console'
+  '@babel/plugin-transform-runtime'
 ];
 
 optimizationDeps.forEach(dep => {
