@@ -98,4 +98,4 @@ yarn-error.*
 *.tsbuildinfo
 
 # Frontend (React Native/Expo app)
-frontend/ 
+# frontend/  # Commented out - this was preventing EAS builds from working 

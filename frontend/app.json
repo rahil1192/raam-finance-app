@@ -30,6 +30,9 @@
       "eas": {
         "projectId": "c2bfc47f-ff5b-4a4d-83ef-17eea8654b15"
       }
+    },
+    "monorepo": {
+      "root": ".."
     }
   }
 }
