@@ -480,4 +480,169 @@ router.get('/plaid/:app_category', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /category_mappings/with_icons:
+ *   get:
+ *     summary: Get all categories with their custom icons
+ *     description: Retrieves all app categories with their associated icons for frontend display
+ *     tags: [Categories]
+ *     responses:
+ *       200:
+ *         description: Categories with icons retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 categories:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       icon:
+ *                         type: string
+ *                       color:
+ *                         type: string
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get('/with_icons', async (req, res) => {
+  try {
+    // Get all unique app categories with their icons
+    const categoryMappings = await CategoryMapping.findAll({
+      attributes: ['app_category', 'icon'],
+      where: { is_active: true },
+      order: [['app_category', 'ASC']]
+    });
+
+    // Create a map of category names to icons
+    const categoriesWithIcons = categoryMappings.map(mapping => ({
+      name: mapping.app_category,
+      icon: mapping.icon || getDefaultIcon(mapping.app_category),
+      color: getDefaultColor(mapping.app_category)
+    }));
+
+    // Add any missing default categories
+    const defaultCategories = getAppCategories();
+    const existingCategories = new Set(categoriesWithIcons.map(cat => cat.name));
+    
+    defaultCategories.forEach(category => {
+      if (!existingCategories.has(category)) {
+        categoriesWithIcons.push({
+          name: category,
+          icon: getDefaultIcon(category),
+          color: getDefaultColor(category)
+        });
+      }
+    });
+
+    res.json({
+      success: true,
+      categories: categoriesWithIcons
+    });
+  } catch (error) {
+    console.error('Error fetching categories with icons:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch categories with icons',
+      message: error.message
+    });
+  }
+});
+
+// Helper function to get default icon for a category
+function getDefaultIcon(category) {
+  const iconMap = {
+    'Transfers': 'swap-horizontal-outline',
+    'Transfer': 'swap-horizontal-outline',
+    'Food & Dining': 'restaurant-outline',
+    'Restaurants & Bars': 'wine-outline',
+    'Coffee Shops': 'cafe-outline',
+    'Groceries': 'basket-outline',
+    'Shopping': 'cart-outline',
+    'Clothing': 'shirt-outline',
+    'Travel & Vacation': 'airplane-outline',
+    'Gas': 'car-sport-outline',
+    'Entertainment & Recreation': 'film-outline',
+    'Medical': 'medkit-outline',
+    'Dentist': 'medkit-outline',
+    'Fitness': 'barbell-outline',
+    'Insurance': 'shield-checkmark-outline',
+    'Loan Repayment': 'cash-outline',
+    'Credit Card Payment': 'card-outline',
+    'Student Loans': 'school-outline',
+    'Business Income': 'briefcase-outline',
+    'Paycheck': 'cash-outline',
+    'Interest': 'trending-up-outline',
+    'Charity': 'heart-outline',
+    'Gifts': 'gift-outline',
+    'Pets': 'paw-outline',
+    'Child Care': 'happy-outline',
+    'Education': 'school-outline',
+    'Home Improvement': 'home-outline',
+    'Rent': 'home-outline',
+    'Mortgage': 'home-outline',
+    'Water': 'water-outline',
+    'Gas & Electric': 'flash-outline',
+    'Internet & Cable': 'wifi-outline',
+    'Phone': 'call-outline',
+    'Cash & ATM': 'cash-outline',
+    'Financial & Legal Services': 'briefcase-outline',
+    'Other': 'ellipsis-horizontal-outline',
+  };
+  return iconMap[category] || 'ellipsis-horizontal-outline';
+}
+
+// Helper function to get default color for a category
+function getDefaultColor(category) {
+  const colorMap = {
+    'Transfers': '#8b5cf6',
+    'Transfer': '#8b5cf6',
+    'Food & Dining': '#22c55e',
+    'Restaurants & Bars': '#f59e0b',
+    'Coffee Shops': '#b45309',
+    'Groceries': '#84cc16',
+    'Shopping': '#f59e0b',
+    'Clothing': '#f472b6',
+    'Travel & Vacation': '#14b8a6',
+    'Gas': '#fbbf24',
+    'Entertainment & Recreation': '#ec4899',
+    'Medical': '#ef4444',
+    'Dentist': '#f87171',
+    'Fitness': '#10b981',
+    'Insurance': '#6366f1',
+    'Loan Repayment': '#a855f7',
+    'Credit Card Payment': '#eab308',
+    'Student Loans': '#6366f1',
+    'Business Income': '#06b6d4',
+    'Paycheck': '#22d3ee',
+    'Interest': '#0ea5e9',
+    'Charity': '#f43f5e',
+    'Gifts': '#a855f7',
+    'Pets': '#fbbf24',
+    'Child Care': '#f472b6',
+    'Education': '#6366f1',
+    'Home Improvement': '#f59e42',
+    'Rent': '#f59e42',
+    'Mortgage': '#f59e42',
+    'Water': '#38bdf8',
+    'Gas & Electric': '#fde68a',
+    'Internet & Cable': '#818cf8',
+    'Phone': '#818cf8',
+    'Cash & ATM': '#fbbf24',
+    'Financial & Legal Services': '#06b6d4',
+    'Other': '#64748b',
+  };
+  return colorMap[category] || '#64748b';
+}
+
 module.exports = router; 

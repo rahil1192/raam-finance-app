@@ -29,6 +29,12 @@ module.exports = (sequelize) => {
       allowNull: false,
       comment: 'App category name (e.g., "Restaurants & Bars")'
     },
+    // Custom icon for the category
+    icon: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Custom icon name for the category (e.g., "restaurant-outline", "wine-outline")'
+    },
     // Additional metadata
     description: {
       type: DataTypes.TEXT,
@@ -55,6 +61,9 @@ module.exports = (sequelize) => {
       },
       {
         fields: ['app_category']
+      },
+      {
+        fields: ['icon']
       },
       {
         fields: ['is_active']
