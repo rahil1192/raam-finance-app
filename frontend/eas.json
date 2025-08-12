@@ -15,7 +15,12 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:assembleRelease",
+        "env": {
+          "ENABLE_PROGUARD": "true",
+          "ENABLE_SHRINK_RESOURCES": "true"
+        }
       },
       "env": {
         "NODE_ENV": "production",
@@ -29,7 +34,12 @@
     },
     "production": {
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:assembleRelease",
+        "env": {
+          "ENABLE_PROGUARD": "true",
+          "ENABLE_SHRINK_RESOURCES": "true"
+        }
       },
       "env": {
         "NODE_ENV": "production",
