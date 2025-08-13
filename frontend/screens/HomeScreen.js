@@ -268,17 +268,7 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
                     size={14}
                     color={netWorthChange === 0 ? "#b0b0b0" : netWorthChange > 0 ? "#19e68c" : "#ef4444"}
                   />
-                  <Text
-                    style={[
-                      styles.changeText,
-                      {
-                        color: netWorthChange === 0 ? "#b0b0b0" : netWorthChange > 0 ? "#19e68c" : "#ef4444",
-                      },
-                    ]}
-                  >
-                    {netWorthChange >= 0 ? "+" : ""}${Math.abs(netWorthChange).toFixed(2)} (
-                    {Math.abs(netWorthChangePercent).toFixed(1)}%)
-                  </Text>
+                 
                 </View>
               </View>
               <TouchableOpacity style={styles.menuButton} onPress={() => setMenuVisible(true)}>
@@ -287,17 +277,7 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
             </View>
 
             {/* Modify the chart container in the networth tab case to make it clickable */}
-            <View style={styles.chartContainer}>
-              {loadingNetWorth ? (
-                <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>Loading...</Text>
-                </View>
-              ) : (
-                <View style={styles.noDataContainer}>
-                  <Text style={styles.noDataText}>No net worth history data available</Text>
-                </View>
-              )}
-            </View>
+           
           </View>
         )
       case "assets":
@@ -315,17 +295,7 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.chartContainer}>
-              {loadingNetWorth ? (
-                <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>Loading...</Text>
-                </View>
-              ) : (
-                <View style={styles.noDataContainer}>
-                  <Text style={styles.noDataText}>No assets history data available</Text>
-                </View>
-              )}
-            </View>
+           
           </View>
         )
       case "liabilities":
@@ -343,17 +313,7 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.chartContainer}>
-              {loadingNetWorth ? (
-                <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>Loading...</Text>
-                </View>
-              ) : (
-                <View style={styles.noDataContainer}>
-                  <Text style={styles.noDataText}>No liabilities history data available</Text>
-                </View>
-              )}
-            </View>
+            
           </View>
         )
       default:

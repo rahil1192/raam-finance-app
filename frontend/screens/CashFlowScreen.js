@@ -87,13 +87,6 @@ const CashFlowScreen = ({ navigation, route }) => {
     return <View style={styles.container} />
   }
 
-  console.log('CashFlowScreen Debug:', {
-    selectedMonthState,
-    monthsDataKeys: Object.keys(monthsData),
-    allTransactionsLength: allTransactions.length,
-    monthData: monthsData[selectedMonthState]
-  });
-
   return (
     <View style={styles.container}>
       <CashFlowPage
@@ -102,6 +95,7 @@ const CashFlowScreen = ({ navigation, route }) => {
         onBack={handleBack}
         allTransactions={allTransactions}
         monthsData={monthsData}
+        navigation={navigation}
       />
     </View>
   )

@@ -11,11 +11,11 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from "@react-navigation/native"
 import { transactionService } from '../../services/api';
-import { getCategoryIconSync, getCategoryColorSync, preloadCategories } from '../../utils/categoryIcons';
 
 export default function DailyTab({ transactions: propTransactions }) {
   const navigation = useNavigation()
@@ -24,6 +24,96 @@ export default function DailyTab({ transactions: propTransactions }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  // Simple icon mapping function
+  const getTransactionIcon = (category) => {
+    const iconMap = {
+      'Transfers': 'swap-horizontal-outline',
+      'Transfer': 'swap-horizontal-outline',
+      'Food & Dining': 'restaurant-outline',
+      'Restaurants & Bars': 'wine-outline',
+      'Coffee Shops': 'cafe-outline',
+      'Groceries': 'basket-outline',
+      'Shopping': 'cart-outline',
+      'Clothing': 'shirt-outline',
+      'Travel & Vacation': 'airplane-outline',
+      'Gas': 'car-sport-outline',
+      'Entertainment & Recreation': 'film-outline',
+      'Medical': 'medkit-outline',
+      'Dentist': 'medkit-outline',
+      'Fitness': 'barbell-outline',
+      'Insurance': 'shield-checkmark-outline',
+      'Loan Repayment': 'cash-outline',
+      'Credit Card Payment': 'card-outline',
+      'Student Loans': 'school-outline',
+      'Business Income': 'briefcase-outline',
+      'Paycheck': 'cash-outline',
+      'PAYCHECK': 'cash-outline',
+      'Interest': 'trending-up-outline',
+      'Charity': 'heart-outline',
+      'Gifts': 'gift-outline',
+      'Pets': 'paw-outline',
+      'Child Care': 'happy-outline',
+      'Education': 'school-outline',
+      'Home Improvement': 'home-outline',
+      'Rent': 'home-outline',
+      'Mortgage': 'home-outline',
+      'Water': 'water-outline',
+      'Gas & Electric': 'flash-outline',
+      'Internet & Cable': 'wifi-outline',
+      'Phone': 'call-outline',
+      'Cash & ATM': 'cash-outline',
+      'Financial & Legal Services': 'briefcase-outline',
+      'Miscellaneous': 'ellipsis-horizontal-outline',
+      'Other': 'ellipsis-horizontal-outline',
+    };
+    return iconMap[category] || 'ellipsis-horizontal-outline';
+  };
+
+  // Simple color mapping function
+  const getCategoryColor = (category) => {
+    const colorMap = {
+      'Transfers': '#8b5cf6',
+      'Transfer': '#8b5cf6',
+      'Food & Dining': '#22c55e',
+      'Restaurants & Bars': '#f59e0b',
+      'Coffee Shops': '#b45309',
+      'Groceries': '#84cc16',
+      'Shopping': '#f59e0b',
+      'Clothing': '#f472b6',
+      'Travel & Vacation': '#14b8a6',
+      'Gas': '#fbbf24',
+      'Entertainment & Recreation': '#ec4899',
+      'Medical': '#ef4444',
+      'Dentist': '#f87171',
+      'Fitness': '#10b981',
+      'Insurance': '#6366f1',
+      'Loan Repayment': '#a855f7',
+      'Credit Card Payment': '#eab308',
+      'Student Loans': '#6366f1',
+      'Business Income': '#06b6d4',
+      'Paycheck': '#22d3ee',
+      'PAYCHECK': '#22d3ee',
+      'Interest': '#0ea5e9',
+      'Charity': '#f43f5e',
+      'Gifts': '#a855f7',
+      'Pets': '#fbbf24',
+      'Child Care': '#f472b6',
+      'Education': '#6366f1',
+      'Home Improvement': '#f59e42',
+      'Rent': '#f59e42',
+      'Mortgage': '#f59e42',
+      'Water': '#38bdf8',
+      'Gas & Electric': '#fde68a',
+      'Internet & Cable': '#818cf8',
+      'Phone': '#818cf8',
+      'Cash & ATM': '#fbbf24',
+      'Financial & Legal Services': '#06b6d4',
+      'Miscellaneous': '#64748b',
+      'Other': '#64748b',
+    };
+    return colorMap[category] || '#64748b';
+  };
+
   useEffect(() => {
     if (propTransactions) {
       processTransactions(propTransactions);
@@ -31,9 +121,6 @@ export default function DailyTab({ transactions: propTransactions }) {
     } else {
       fetchCategoryData();
     }
-    
-    // Preload category icons from backend
-    preloadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propTransactions]);
 
@@ -79,11 +166,15 @@ export default function DailyTab({ transactions: propTransactions }) {
       // Credit (money IN) = Positive, Debit (money OUT) = Negative
       const amount = transaction.transaction_type === "Credit" ? Math.abs(transaction.amount) : -Math.abs(transaction.amount)
       const displayCategory = transaction.app_category || transaction.category || "Other"
+      
+      // Check if this is a transfer transaction
+      const isTransfer = displayCategory === "Transfers" || displayCategory === "Transfer";
+      
       groups[date].transactions.push({
         id: transaction.id,
         name: transaction.details,
-        icon: getCategoryIconSync(displayCategory),
-        iconBgColor: getCategoryColorSync(displayCategory),
+        icon: getTransactionIcon(displayCategory),
+        iconBgColor: getCategoryColor(displayCategory),
         amount: amount,
         category: displayCategory,
         date: date,
@@ -96,8 +187,14 @@ export default function DailyTab({ transactions: propTransactions }) {
         account_id: transaction.account_id,
         recurrence_pattern: transaction.recurrence_pattern,
         is_recurring: transaction.is_recurring,
+        isTransfer: isTransfer, // Add flag for transfer transactions
       })
-      groups[date].total += amount
+      
+      // Only add to daily total if it's NOT a transfer
+      if (!isTransfer) {
+        groups[date].total += amount;
+      }
+      
       return groups
     }, {})
     const sortedTransactions = Object.values(groupedTransactions).sort((a, b) => new Date(b.date) - new Date(a.date))
@@ -134,19 +231,39 @@ export default function DailyTab({ transactions: propTransactions }) {
   }
 
   const filterTransactions = (data) => {
-    if (activeFilter === "All") return data
+    if (activeFilter === "All") {
+      // For "All" tab, show all transactions but exclude transfers from totals
+      const result = data.map((group) => {
+        if (!group.transactions || !Array.isArray(group.transactions)) {
+          return { ...group, transactions: [], total: 0 };
+        }
+        
+        // Filter out transfers for display in "All" tab
+        const nonTransferTransactions = group.transactions.filter((transaction) => {
+          return transaction.category !== "Transfers" && transaction.category !== "Transfer";
+        });
+        
+        // Calculate total excluding transfers
+        const newTotal = nonTransferTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+        
+        return {
+          ...group,
+          transactions: nonTransferTransactions,
+          total: newTotal,
+        };
+      }).filter((group) => group.transactions.length > 0);
+      
+      return result;
+    }
+    
     if (activeFilter === "Transfers") {
-      console.log("Filtering for Transfers...");
       const result = data
         .map((group) => {
           if (!group.transactions || !Array.isArray(group.transactions)) {
             return { ...group, transactions: [], total: 0 };
           }
           const filteredTransactions = group.transactions.filter((transaction) => {
-            const isTransfer = transaction.category === "Transfers";
-            if (isTransfer) {
-              console.log("Found transfer:", transaction.details, transaction.category);
-            }
+            const isTransfer = transaction.category === "Transfers" || transaction.category === "Transfer";
             return isTransfer;
           });
           const newTotal = filteredTransactions.reduce((sum, transaction) => sum + transaction.amount, 0)
@@ -157,9 +274,10 @@ export default function DailyTab({ transactions: propTransactions }) {
           }
         })
         .filter((group) => group.transactions.length > 0)
-      console.log("Transfer filter result:", result.length, "groups");
       return result;
     }
+    
+    // For Expenses and Income tabs, exclude transfers completely
     return data
       .map((group) => {
         if (!group.transactions || !Array.isArray(group.transactions)) {
@@ -167,7 +285,7 @@ export default function DailyTab({ transactions: propTransactions }) {
         }
         const filteredTransactions = group.transactions.filter((transaction) => {
           // Exclude transfers from expense and income calculations
-          if (transaction.category === "Transfers") {
+          if (transaction.category === "Transfers" || transaction.category === "Transfer") {
             return false
           }
           if (activeFilter === "Expenses") return transaction.amount < 0
@@ -192,7 +310,7 @@ export default function DailyTab({ transactions: propTransactions }) {
     let amountColor = "white";
     let indicatorColor = "#f59e0b";
     
-    if (item.category === "Transfers") {
+    if (item.category === "Transfers" || item.category === "Transfer") {
       // Use purple for transfers
       amountColor = "#8b5cf6";
       indicatorColor = "#8b5cf6";
@@ -228,6 +346,11 @@ export default function DailyTab({ transactions: propTransactions }) {
       totalColor = "#8b5cf6"; // Purple for transfers
     } else if (item.total > 0) {
       totalColor = "#22c55e"; // Green for income
+    }
+
+    // Don't render date groups with no transactions
+    if (!item.transactions || item.transactions.length === 0) {
+      return null;
     }
 
     return (

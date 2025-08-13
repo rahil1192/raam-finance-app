@@ -74,7 +74,7 @@ export default function AddIncomeModal() {
       setAmount(Math.abs(transaction.amount).toString());
       setCategory(transaction.app_category || transaction.category || "Income");
       setCategoryCode(transaction.category_code || "");
-      setMerchant(transaction.name || "Payer");
+      setMerchant(transaction.details || transaction.name || "Select Merchant");
       setNotes(transaction.notes || "");
       setRecurrence(transaction.recurrence_pattern || 'none');
       setRecurring(transaction.is_recurring || false);

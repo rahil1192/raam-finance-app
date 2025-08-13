@@ -231,7 +231,15 @@ router.post('/exchange_public_token', async (req, res) => {
     if (!created) {
       await plaidItem.update({
         access_token: accessToken,
-        last_refresh: new Date()
+        last_refresh: new Date(),
+        status: null, // Reset status after successful reconnection
+        needs_update: false // Reset needs_update flag
+      });
+    } else {
+      // For newly created items, ensure status is null
+      await plaidItem.update({
+        status: null,
+        needs_update: false
       });
     }
 
@@ -326,7 +334,22 @@ router.post('/exchange_public_token', async (req, res) => {
       console.log(`✅ Auto-fetch completed: ${savedCount} transactions saved, ${filteredCount} filtered out by date`);
 
       // Update last refresh time
-      await plaidItem.update({ last_refresh: new Date() });
+      await plaidItem.update({ 
+        last_refresh: new Date(),
+        status: null, // Reset status after successful auto-fetch
+        needs_update: false // Reset needs_update flag
+      });
+
+      // Also update all associated accounts' last_updated timestamp
+      const associatedAccounts = await Account.findAll({
+        where: { plaid_item_id: plaidItem.id }
+      });
+      
+      for (const account of associatedAccounts) {
+        await account.update({ last_updated: new Date() });
+      }
+      
+      console.log(`✅ Updated ${associatedAccounts.length} associated accounts`);
 
       res.json({
         success: true,

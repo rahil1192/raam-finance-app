@@ -33,6 +33,17 @@ export default function App({ navigation }) {
   if (accounts && Array.isArray(accounts) && accounts.length > 0) {
     console.log('🔍 First account structure:', accounts[0]);
     console.log('🔍 First account plaid_item:', accounts[0].plaid_item);
+    
+    // Log all accounts with their status
+    accounts.forEach((account, index) => {
+      console.log(`🔍 Account ${index + 1}: ${account.name}`, {
+        id: account.id,
+        last_updated: account.last_updated,
+        plaid_item: account.plaid_item,
+        status: account.plaid_item?.status,
+        needs_update: account.plaid_item?.needs_update
+      });
+    });
   }
   
   const [selectedTab, setSelectedTab] = useState('NET WORTH');
@@ -132,10 +143,21 @@ export default function App({ navigation }) {
   // const accounts = accountsData || [];
 
   // Helper to check if account is stale (now uses lastRefresh)
-  const isStale = () => {
-    if (!lastRefresh) return true;
-    const last = new Date(lastRefresh);
-    return (Date.now() - last.getTime()) > 24 * 60 * 60 * 1000;
+  const isStale = (account) => {
+    // Check individual account's last_updated instead of global lastRefresh
+    if (!account.last_updated) return true;
+    const last = new Date(account.last_updated);
+    const isStale = (Date.now() - last.getTime()) > 24 * 60 * 60 * 1000; // More than 24 hours
+    
+    console.log(`🔍 Account ${account.name} stale check:`, {
+      lastUpdated: account.last_updated,
+      lastDate: last,
+      now: new Date(),
+      timeDiff: Date.now() - last.getTime(),
+      isStale: isStale
+    });
+    
+    return isStale;
   };
 
   // Helper to check if account needs manual refresh (e.g., PRODUCT_NOT_READY errors)
@@ -154,15 +176,6 @@ export default function App({ navigation }) {
     
     return !wasRecentlyUpdated && (isOld || !lastUpdated);
   };
-
-  // Centralized needsUpdate logic using plaidItems from context
-  const needsUpdate = React.useMemo(() => {
-    let plaidNeedsUpdate = false;
-    if (Array.isArray(plaidItems)) {
-      plaidNeedsUpdate = plaidItems.some(item => item.needs_update || item.status === 'ITEM_LOGIN_REQUIRED');
-    }
-    return isStale() || plaidNeedsUpdate;
-  }, [lastRefresh, plaidItems]);
 
   // Replace fetchAccounts and onRefresh to use refreshAccounts
   const fetchAccounts = refreshAccounts;
@@ -184,9 +197,19 @@ export default function App({ navigation }) {
       setExpandedBanks(allBanks);
     }
     
-    if (isStale()) {
-      // needsUpdate is now derived from context
+    // Check if any accounts need updating
+    const anyAccountsStale = accounts && Array.isArray(accounts) && 
+      accounts.some(account => isStale(account) || 
+        account.plaid_item?.status === 'ITEM_LOGIN_REQUIRED' ||
+        account.plaid_item?.status === 'INVALID_ACCESS_TOKEN' ||
+        account.plaid_item?.status === 'ITEM_ERROR' ||
+        account.plaid_item?.needs_update
+      );
+    
+    if (anyAccountsStale) {
+      console.log('🔄 Some accounts need updating, proceeding with refresh...');
     }
+    
     try {
       // Always refresh all accounts regardless of selected tab
       await refreshAccounts();
@@ -425,9 +448,69 @@ export default function App({ navigation }) {
   // Handle reconnection for existing accounts (uses update mode, not create mode)
   const handleReconnection = async (account) => {
     console.log('🔄 Reconnecting account:', account.name);
+    console.log('🔍 Account details:', {
+      id: account.id,
+      plaid_item: account.plaid_item,
+      item_id: account.plaid_item?.item_id
+    });
     
-    if (!account.plaid_item?.item_id) {
+    if (!account.plaid_item) {
+      console.error('❌ No Plaid item found for account:', account.name);
+      setLastRefreshMessage('Error: Cannot reconnect account - no Plaid connection found');
+      return;
+    }
+    
+    if (!account.plaid_item.item_id) {
       console.error('❌ No Plaid item ID found for account:', account.name);
+      console.log('🔍 Plaid item structure:', account.plaid_item);
+      
+      // Try to get the item_id from the plaid_item_id field if available
+      if (account.plaid_item_id) {
+        console.log('🔄 Using plaid_item_id as fallback:', account.plaid_item_id);
+        try {
+          const response = await plaidService.createUpdateLinkToken(account.plaid_item_id);
+          console.log('✅ Update link token response:', response);
+          
+          const linkToken = response.link_token;
+          if (!linkToken) {
+            console.error('❌ No update link token received');
+            setLastRefreshMessage('Error: No update link token received');
+            return;
+          }
+
+          console.log('🔓 Creating Plaid Link in UPDATE mode...');
+          create({ token: linkToken });
+          
+          console.log('🚪 Opening Plaid Link in update mode...');
+          open({
+            onSuccess: async (result) => {
+              console.log('✅ Plaid Link update success:', result);
+              setLastRefreshMessage('Successfully reconnected to bank');
+              try {
+                console.log('🔄 Exchanging public token...');
+                await plaidService.exchangePublicToken(result.publicToken);
+                console.log('✅ Public token exchanged successfully');
+                await refreshAccounts();
+                console.log('✅ Accounts refreshed');
+              } catch (error) {
+                console.error('❌ Error exchanging public token:', error);
+                setLastRefreshMessage('Error reconnecting to bank');
+              }
+            },
+            onExit: (result) => {
+              console.log('🚪 Plaid Link update exited:', result);
+              if (result.error) {
+                console.error('❌ Plaid Link update error:', result.error);
+                setLastRefreshMessage(`Error: ${result.error.displayMessage || 'Could not reconnect to bank'}`);
+              }
+            },
+          });
+          return;
+        } catch (error) {
+          console.error('❌ Error creating update link token with fallback ID:', error);
+        }
+      }
+      
       setLastRefreshMessage('Error: Cannot reconnect account - missing Plaid item ID');
       return;
     }
@@ -646,12 +729,23 @@ export default function App({ navigation }) {
                         <Text style={styles.accountBalance}>
                           ${account.current_balance ? account.current_balance.toLocaleString(undefined, {minimumFractionDigits: 2}) : '0.00'}
                         </Text>
-                        {(isStale() || needsUpdate) && (
+                        {(isStale(account) || account.plaid_item?.status === 'ITEM_LOGIN_REQUIRED' || 
+                          account.plaid_item?.status === 'INVALID_ACCESS_TOKEN' || 
+                          account.plaid_item?.status === 'ITEM_ERROR' || 
+                          account.plaid_item?.needs_update) && (
                           <View style={styles.warningContainer}>
                             <AntDesign name="warning" size={16} color="#FF3B30" />
                             <Text style={styles.warningText}>Needs Update</Text>
                           </View>
                         )}
+                        
+                        {/* Debug: Log account status */}
+                        {console.log(`🔍 Account ${account.name} status:`, {
+                          isStale: isStale(account),
+                          plaidStatus: account.plaid_item?.status,
+                          needsUpdate: account.plaid_item?.needs_update,
+                          lastUpdated: account.last_updated
+                        })}
                         {/* Show reconnection warning if Plaid item needs reconnection */}
                         {account.plaid_item && (account.plaid_item.status === 'ITEM_LOGIN_REQUIRED' || 
                                                account.plaid_item.status === 'INVALID_ACCESS_TOKEN' || 

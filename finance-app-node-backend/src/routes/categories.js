@@ -551,6 +551,30 @@ router.get('/with_icons', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching categories with icons:', error);
+    
+    // If there's a database error (like missing icon column), fall back to default categories
+    if (error.name === 'SequelizeDatabaseError' || error.message.includes('icon')) {
+      console.log('⚠️ Database error detected, falling back to default categories...');
+      
+      try {
+        const defaultCategories = getAppCategories();
+        const fallbackCategories = defaultCategories.map(category => ({
+          name: category,
+          icon: getDefaultIcon(category),
+          color: getDefaultColor(category)
+        }));
+        
+        res.json({
+          success: true,
+          categories: fallbackCategories,
+          warning: 'Using default categories due to database configuration'
+        });
+        return;
+      } catch (fallbackError) {
+        console.error('❌ Fallback also failed:', fallbackError);
+      }
+    }
+    
     res.status(500).json({
       success: false,
       error: 'Failed to fetch categories with icons',

@@ -39,7 +39,7 @@ router.get('/', async (req, res) => {
         {
           model: PlaidItem,
           as: 'plaid_item',
-          attributes: ['institution_name', 'last_refresh', 'status']
+          attributes: ['id', 'item_id', 'institution_name', 'last_refresh', 'status']
         }
       ],
       order: [['name', 'ASC']]
@@ -495,11 +495,20 @@ router.post('/:id/refresh', async (req, res) => {
     // Update the account's last_updated timestamp
     await account.update({ last_updated: new Date() });
 
+    // Reset the Plaid item status since refresh was successful
+    if (account.plaid_item) {
+      await account.plaid_item.update({
+        status: null, // Reset status after successful refresh
+        needs_update: false // Reset needs_update flag
+      });
+      console.log('✅ Reset Plaid item status after successful refresh');
+    }
+
     console.log(`✅ Manual refresh completed: ${savedCount} transactions saved, ${filteredCount} filtered out`);
 
     res.json({
       success: true,
-      message: `Successfully refreshed transactions for ${account.name}`,
+      message: 'Account refreshed successfully',
       account: {
         id: account.id,
         name: account.name,
@@ -520,19 +529,52 @@ router.post('/:id/refresh', async (req, res) => {
       const plaidError = error.response.data;
       console.log('🔍 Plaid error details:', plaidError);
       
+      // We need to get the account again to update its Plaid item status
+      try {
+        const accountToUpdate = await Account.findByPk(req.params.id, {
+          include: [
+            {
+              model: PlaidItem,
+              as: 'plaid_item'
+            }
+          ]
+        });
+        
+        if (accountToUpdate && accountToUpdate.plaid_item) {
+          // Handle specific Plaid error codes
+          if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
+            // Update the Plaid item status to indicate it needs re-authentication
+            await accountToUpdate.plaid_item.update({ 
+              status: 'ITEM_LOGIN_REQUIRED',
+              needs_update: true 
+            });
+            console.log('✅ Updated Plaid item status to ITEM_LOGIN_REQUIRED');
+          }
+          
+          if (plaidError.error_code === 'INVALID_ACCESS_TOKEN') {
+            // Update the Plaid item status
+            await accountToUpdate.plaid_item.update({ 
+              status: 'INVALID_ACCESS_TOKEN',
+              needs_update: true 
+            });
+            console.log('✅ Updated Plaid item status to INVALID_ACCESS_TOKEN');
+          }
+          
+          if (plaidError.error_code === 'ITEM_ERROR') {
+            // Update the Plaid item status
+            await accountToUpdate.plaid_item.update({ 
+              status: 'ITEM_ERROR',
+              needs_update: true 
+            });
+            console.log('✅ Updated Plaid item status to ITEM_ERROR');
+          }
+        }
+      } catch (updateError) {
+        console.error('❌ Failed to update Plaid item status:', updateError);
+      }
+      
       // Handle specific Plaid error codes
       if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
-        // Update the Plaid item status to indicate it needs re-authentication
-        try {
-          await account.plaid_item.update({ 
-            status: 'ITEM_LOGIN_REQUIRED',
-            needs_update: true 
-          });
-          console.log('✅ Updated Plaid item status to ITEM_LOGIN_REQUIRED');
-        } catch (updateError) {
-          console.error('❌ Failed to update Plaid item status:', updateError);
-        }
-        
         return res.status(400).json({
           success: false,
           error: 'ITEM_LOGIN_REQUIRED',
@@ -543,17 +585,6 @@ router.post('/:id/refresh', async (req, res) => {
       }
       
       if (plaidError.error_code === 'INVALID_ACCESS_TOKEN') {
-        // Update the Plaid item status
-        try {
-          await account.plaid_item.update({ 
-            status: 'INVALID_ACCESS_TOKEN',
-            needs_update: true 
-          });
-          console.log('✅ Updated Plaid item status to INVALID_ACCESS_TOKEN');
-        } catch (updateError) {
-          console.error('❌ Failed to update Plaid item status:', updateError);
-        }
-        
         return res.status(400).json({
           success: false,
           error: 'INVALID_ACCESS_TOKEN',
@@ -564,17 +595,6 @@ router.post('/:id/refresh', async (req, res) => {
       }
       
       if (plaidError.error_code === 'ITEM_ERROR') {
-        // Update the Plaid item status
-        try {
-          await account.plaid_item.update({ 
-            status: 'ITEM_ERROR',
-            needs_update: true 
-          });
-          console.log('✅ Updated Plaid item status to ITEM_ERROR');
-        } catch (updateError) {
-          console.error('❌ Failed to update Plaid item status:', updateError);
-        }
-        
         return res.status(400).json({
           success: false,
           error: 'ITEM_ERROR',

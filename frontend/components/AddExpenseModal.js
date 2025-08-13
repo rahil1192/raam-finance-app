@@ -66,7 +66,7 @@ export default function AddExpenseModal() {
   const processTransactionWithAccounts = (transaction, accounts) => {
     setAmount(Math.abs(transaction.amount).toString())
     setCategory(transaction.app_category || transaction.category || "Misc Expenses")
-    setMerchant(transaction.name || "Rogers")
+    setMerchant(transaction.details || transaction.name || "Select Merchant")
     setNotes(transaction.notes || "")
     
     // Check if transaction is a transfer

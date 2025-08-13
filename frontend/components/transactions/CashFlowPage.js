@@ -15,7 +15,7 @@ const FILTERS = [
   { key: "income", label: "Income" },
 ]
 
-const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialMonthData, onBack, allTransactions = [], monthsData = {} }) => {
+const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialMonthData, onBack, allTransactions = [], monthsData = {}, navigation }) => {
   // Generate complete list of months from January 2025 to current month
   const generateCompleteMonthsData = () => {
     const completeMonthsData = { ...monthsData };
@@ -756,8 +756,32 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
       month: 'short'
     });
 
+    const handleTransactionPress = () => {
+      if (!navigation) return;
+      
+      // Determine which screen to navigate to based on transaction type
+      let screenName = "AddExpense"; // Default to expense
+      
+      if (item.transaction_type === "Credit") {
+        screenName = "AddIncome";
+      } else if (item.category === "Transfers" || item.category === "Transfer") {
+        // For transfers, we might want to show a different screen or just return
+        return; // Don't navigate for transfers for now
+      }
+      
+      // Navigate to the appropriate screen with transaction data
+      navigation.navigate(screenName, {
+        transaction: item,
+        isEditing: true
+      });
+    };
+
     return (
-      <View style={styles.transactionItem}>
+      <TouchableOpacity 
+        style={styles.transactionItem}
+        onPress={handleTransactionPress}
+        activeOpacity={0.7}
+      >
         <View style={styles.transactionInfo}>
           <Text style={styles.transactionDetails} numberOfLines={1}>
             {item.details}
@@ -775,7 +799,7 @@ const CashFlowPage = ({ selectedMonth: initialSelectedMonth, monthData: initialM
         >
           {item.transaction_type === "Credit" ? "+" : "-"}${Math.abs(Number.parseFloat(item.amount)).toFixed(2)}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -1528,6 +1552,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#1e293b",
+    backgroundColor: "#1e293b",
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginVertical: 4,
+  },
+  transactionItemPressed: {
+    backgroundColor: "#334155",
   },
   transactionInfo: {
     flex: 1,

@@ -99,6 +99,33 @@ const initDatabase = async () => {
           console.log('✅ merchant_category_mappings table already exists.');
         }
         
+        // Check if category_mappings table exists and has the icon column
+        const categoryTableExists = await sequelize.query(
+          "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'category_mappings')",
+          { type: sequelize.QueryTypes.SELECT }
+        );
+        
+        if (categoryTableExists[0].exists) {
+          // Check if icon column exists
+          const iconColumnExists = await sequelize.query(
+            "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'category_mappings' AND column_name = 'icon')",
+            { type: sequelize.QueryTypes.SELECT }
+          );
+          
+          if (!iconColumnExists[0].exists) {
+            console.log('🔄 Adding icon column to category_mappings table...');
+            await sequelize.query(`
+              ALTER TABLE category_mappings 
+              ADD COLUMN icon VARCHAR(255)
+            `);
+            console.log('✅ icon column added to category_mappings table successfully.');
+          } else {
+            console.log('✅ icon column already exists in category_mappings table.');
+          }
+        } else {
+          console.log('⚠️ category_mappings table does not exist yet.');
+        }
+        
         console.log('✅ PostgreSQL database check completed.');
       } catch (tableError) {
         console.warn('⚠️ Could not create merchant_category_mappings table:', tableError.message);
