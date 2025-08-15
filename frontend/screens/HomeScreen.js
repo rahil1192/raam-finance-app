@@ -21,6 +21,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons"
 import { FontAwesome5 } from "@expo/vector-icons"
 import { LineChart, BarChart } from "react-native-chart-kit"
 import axios from "axios"
+import { getApiUrl } from "../config/api"
 
 const { width } = Dimensions.get("window")
 const TIME_RANGES = ["1M", "3M", "6M", "YTD", "1Y", "ALL"]
@@ -52,12 +53,14 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
   const [menuVisible, setMenuVisible] = useState(false)
   // Add a new state for the chart modal
   const [chartModalVisible, setChartModalVisible] = useState(false)
+  // Add state for expanded banks
+  const [expandedBanks, setExpandedBanks] = useState({})
 
   // Add a test function to check backend connectivity
   const testBackendConnection = async () => {
     try {
       console.log('🧪 Testing backend connection...');
-      const response = await fetch('https://raam-finance-app.onrender.com/', {
+      const response = await fetch(getApiUrl('/'), {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -104,8 +107,8 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
 
   const fetchTransactions = async () => {
     try {
-      console.log('🔍 Fetching transactions from:', 'https://raam-finance-app.onrender.com/api/transactions');
-      const response = await fetch('https://raam-finance-app.onrender.com/api/transactions', {
+      console.log('🔍 Fetching transactions from:', getApiUrl('/api/transactions'));
+      const response = await fetch(getApiUrl('/api/transactions'), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -114,14 +117,14 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
       });
       
       console.log('📡 Response status:', response.status);
-      console.log('📡 Response headers:', response.headers);
+     
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json()
-      console.log('📦 Fetched transactions data:', data);
+      
       
       // Handle different response formats
       if (Array.isArray(data)) {
@@ -147,8 +150,8 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
 
   const fetchNetWorthData = async () => {
     try {
-      console.log('🔍 Fetching net worth data from:', 'https://raam-finance-app.onrender.com/api/accounts');
-      const response = await axios.get('https://raam-finance-app.onrender.com/api/accounts', {
+      console.log('🔍 Fetching net worth data from:', getApiUrl('/api/accounts'));
+      const response = await axios.get(getApiUrl('/api/accounts'), {
         timeout: 10000,
         headers: {
           'Content-Type': 'application/json',
@@ -159,7 +162,7 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
       console.log('📡 Net worth response status:', response.status);
       console.log('📡 Net worth response headers:', response.headers);
       
-      const accounts = response.data || []
+      const accounts = response.data.accounts || []
       console.log('📦 Fetched accounts data:', accounts);
 
       // Ensure accounts is an array and add null checks
@@ -177,7 +180,7 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
 
       // Separate accounts and credit cards
       const depositoryAccounts = accounts.filter((acc) => acc && acc.type === "depository") || []
-      const creditAccounts = accounts.filter((acc) => acc && acc.type === "credit") || []
+      const creditAccounts = accounts.filter((acc) => acc && (acc.type === "credit" ||  acc.type === "loan") )|| []
 
       // Calculate totals
       const totalAssets = depositoryAccounts.reduce((sum, acc) => sum + (acc?.current_balance || 0), 0)
@@ -194,6 +197,8 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
           balance: acc?.current_balance || 0,
           type: acc?.type,
           subtype: acc?.subtype,
+          bankName: acc?.plaid_item?.institution_name || 'Unknown Bank',
+          bankId: acc?.plaid_item?.id,
         })),
         creditCards: creditAccounts.map((acc) => ({
           id: acc?.account_id,
@@ -202,6 +207,8 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
           limit: acc?.limit || 0,
           type: acc?.type,
           subtype: acc?.subtype,
+          bankName: acc?.plaid_item?.institution_name || 'Unknown Bank',
+          bankId: acc?.plaid_item?.id,
         })),
       })
     } catch (error) {
@@ -252,6 +259,14 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
     setChartModalVisible(true)
   }
 
+  // Add function to toggle bank expansion
+  const toggleBankExpansion = (bankName) => {
+    setExpandedBanks(prev => ({
+      ...prev,
+      [bankName]: !prev[bankName]
+    }));
+  }
+
   const renderTabContent = () => {
     switch (selectedTab) {
       case "networth":
@@ -295,7 +310,73 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
               </TouchableOpacity>
             </View>
 
-           
+            {/* Assets Breakdown */}
+            <View style={styles.accountsContainer}>
+              {netWorthData.accounts.length > 0 ? (
+                (() => {
+                  // Group accounts by bank
+                  const accountsByBank = {};
+                  netWorthData.accounts.forEach(account => {
+                    const bankName = account.bankName || 'Unknown Bank';
+                    if (!accountsByBank[bankName]) {
+                      accountsByBank[bankName] = [];
+                    }
+                    accountsByBank[bankName].push(account);
+                  });
+
+                  // Calculate total balance for each bank
+                  const bankTotals = {};
+                  Object.keys(accountsByBank).forEach(bankName => {
+                    bankTotals[bankName] = accountsByBank[bankName].reduce((sum, acc) => sum + acc.balance, 0);
+                  });
+
+                  return Object.keys(accountsByBank).map((bankName, bankIndex) => (
+                    <View key={bankIndex} style={styles.bankGroup}>
+                      <TouchableOpacity 
+                        style={styles.bankHeader}
+                        onPress={() => toggleBankExpansion(bankName)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.bankHeaderLeft}>
+                          <Ionicons 
+                            name={expandedBanks[bankName] ? "chevron-down" : "chevron-forward"} 
+                            size={16} 
+                            color="#b0b0b0" 
+                            style={styles.expandIcon}
+                          />
+                          <Text style={styles.bankName}>{bankName}</Text>
+                        </View>
+                        <Text style={[styles.bankTotal, styles.positiveAmount]}>
+                          +${bankTotals[bankName].toLocaleString()}
+                        </Text>
+                      </TouchableOpacity>
+                      {expandedBanks[bankName] && (
+                        <View style={styles.accountsList}>
+                          {accountsByBank[bankName].map((account, accountIndex) => (
+                            <View key={account.id || accountIndex} style={styles.accountRow}>
+                              <View style={styles.accountInfo}>
+                                <Text style={styles.accountName}>{account.name}</Text>
+                                <Text style={styles.accountType}>
+                                  {account.subtype ? account.subtype.charAt(0).toUpperCase() + account.subtype.slice(1) : 'Account'}
+                                </Text>
+                              </View>
+                              <Text style={[styles.accountBalance, styles.positiveAmount]}>
+                                +${account.balance.toLocaleString()}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  ));
+                })()
+              ) : (
+                <View style={styles.noDataContainer}>
+                  <Text style={styles.noDataText}>No asset accounts found</Text>
+                  <Text style={styles.noDataSubtext}>Connect your bank accounts to see your assets</Text>
+                </View>
+              )}
+            </View>
           </View>
         )
       case "liabilities":
@@ -313,7 +394,86 @@ export default function HomeScreen({ navigation: propNavigation, route }) {
               </TouchableOpacity>
             </View>
 
-            
+            {/* Liabilities Breakdown */}
+            <View style={styles.accountsContainer}>
+              {netWorthData.creditCards.length > 0 ? (
+                (() => {
+                  // Group liabilities by bank
+                  const liabilitiesByBank = {};
+                  netWorthData.creditCards.forEach(account => {
+                    const bankName = account.bankName || 'Unknown Bank';
+                    if (!liabilitiesByBank[bankName]) {
+                      liabilitiesByBank[bankName] = [];
+                    }
+                    liabilitiesByBank[bankName].push(account);
+                  });
+
+                  // Calculate total balance for each bank
+                  const bankTotals = {};
+                  Object.keys(liabilitiesByBank).forEach(bankName => {
+                    bankTotals[bankName] = liabilitiesByBank[bankName].reduce((sum, acc) => sum + acc.balance, 0);
+                  });
+
+                  return Object.keys(liabilitiesByBank).map((bankName, bankIndex) => (
+                    <View key={bankIndex} style={styles.bankGroup}>
+                      <TouchableOpacity 
+                        style={styles.bankHeader}
+                        onPress={() => toggleBankExpansion(bankName)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.bankHeaderLeft}>
+                          <Ionicons 
+                            name={expandedBanks[bankName] ? "chevron-down" : "chevron-forward"} 
+                            size={16} 
+                            color="#b0b0b0" 
+                            style={styles.expandIcon}
+                          />
+                          <Text style={styles.bankName}>{bankName}</Text>
+                        </View>
+                        <Text style={[styles.bankTotal, styles.negativeAmount]}>
+                          -${bankTotals[bankName].toLocaleString()}
+                        </Text>
+                      </TouchableOpacity>
+                      {expandedBanks[bankName] && (
+                        <View style={styles.accountsList}>
+                          {liabilitiesByBank[bankName].map((creditCard, accountIndex) => (
+                            <View key={creditCard.id || accountIndex} style={styles.accountRow}>
+                              <View style={styles.accountInfo}>
+                                <Text style={styles.accountName}>{creditCard.name}</Text>
+                                <Text style={styles.accountType}>
+                                  {creditCard.subtype ? creditCard.subtype.charAt(0).toUpperCase() + creditCard.subtype.slice(1) : 
+                                   creditCard.type === 'credit' ? 'Credit Card' : 'Loan'}
+                                </Text>
+                                {creditCard.limit > 0 && (
+                                  <Text style={styles.creditLimit}>
+                                    Limit: ${creditCard.limit.toLocaleString()}
+                                  </Text>
+                                )}
+                              </View>
+                              <View style={styles.creditCardDetails}>
+                                <Text style={[styles.accountBalance, styles.negativeAmount]}>
+                                  -${creditCard.balance.toLocaleString()}
+                                </Text>
+                                {creditCard.limit > 0 && (
+                                  <Text style={styles.creditUtilization}>
+                                    {((creditCard.balance / creditCard.limit) * 100).toFixed(1)}% used
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  ));
+                })()
+              ) : (
+                <View style={styles.noDataContainer}>
+                  <Text style={styles.noDataText}>No liability accounts found</Text>
+                  <Text style={styles.noDataSubtext}>Connect your credit cards or loans to see your liabilities</Text>
+                </View>
+              )}
+            </View>
           </View>
         )
       default:
@@ -1537,5 +1697,89 @@ const styles = StyleSheet.create({
   extendedChartContainer: {
     height: "100%",
     justifyContent: "center",
+  },
+  accountsContainer: {
+    marginTop: 16,
+  },
+  accountRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  accountInfo: {
+    flex: 1,
+  },
+  accountName: {
+    fontSize: 16,
+    color: "#fff",
+    fontWeight: "500",
+  },
+  accountType: {
+    fontSize: 12,
+    color: "#b0b0b0",
+  },
+  accountBalance: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  creditLimit: {
+    fontSize: 12,
+    color: "#b0b0b0",
+    marginTop: 4,
+  },
+  creditUtilization: {
+    fontSize: 12,
+    color: "#ef4444",
+    marginTop: 4,
+  },
+  creditCardDetails: {
+    alignItems: "flex-end",
+  },
+  positiveAmount: {
+    color: "#19e68c",
+  },
+  negativeAmount: {
+    color: "#ef4444",
+  },
+  noDataSubtext: {
+    fontSize: 12,
+    color: "#b0b0b0",
+    marginTop: 4,
+  },
+  bankGroup: {
+    marginBottom: 16,
+    backgroundColor: "#232323",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  bankHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  bankHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  expandIcon: {
+    marginRight: 8,
+  },
+  bankName: {
+    fontSize: 16,
+    color: "#fff",
+    fontWeight: "500",
+  },
+  bankTotal: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  accountsList: {
+    paddingLeft: 20,
   },
 })
