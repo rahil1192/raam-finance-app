@@ -56,6 +56,7 @@ export default function App({ navigation }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [showAllAccountsDuringRefresh, setShowAllAccountsDuringRefresh] = useState(false);
   const [refreshingAccounts, setRefreshingAccounts] = useState(new Set());
+  const [syncingTransactions, setSyncingTransactions] = useState(false);
 
   // Calculate net worth: sum of account balances (positive for assets, negative for liabilities)
   const calculateNetWorth = (accounts) => {
@@ -131,6 +132,49 @@ export default function App({ navigation }) {
     refreshAccounts();
   }, []);
 
+  // Periodic sync check to ensure accounts stay synchronized
+  useEffect(() => {
+    if (!accounts || accounts.length === 0) return;
+    
+    const syncInterval = setInterval(async () => {
+      try {
+        console.log('🔄 Periodic sync check...');
+        
+        // First sync transactions from Plaid
+        const syncResponse = await fetch(`${apiConfig.baseURL}/api/plaid/sync_transactions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ force_full_fetch: false }) // Use incremental sync for periodic updates
+        });
+        
+        if (syncResponse.ok) {
+          const syncResult = await syncResponse.json();
+          console.log('📊 Periodic transaction sync result:', syncResult);
+        }
+        
+        // Wait a moment for backend to process the sync
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Now refresh account balances from Plaid
+        console.log('🔄 Refreshing account balances from Plaid...');
+        await refreshAccountBalances();
+        
+        // Wait for balance updates to process
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Then refresh account metadata
+        await refreshAccounts();
+        console.log('✅ Periodic sync completed');
+      } catch (error) {
+        console.error('❌ Periodic sync failed:', error);
+      }
+    }, 5 * 60 * 1000); // Check every 5 minutes
+    
+    return () => clearInterval(syncInterval);
+  }, [accounts, refreshAccounts]);
+
   // Helper for account icon (replace with real images if you want)
   const getBankIcon = (name) => {
     if (name && name.toLowerCase().includes('cibc')) {
@@ -177,6 +221,82 @@ export default function App({ navigation }) {
     return !wasRecentlyUpdated && (isOld || !lastUpdated);
   };
 
+  // Helper to check if accounts are properly synced
+  const areAccountsSynced = () => {
+    if (!accounts || !Array.isArray(accounts)) return false;
+    
+    const now = Date.now();
+    const oneHourAgo = now - (60 * 60 * 1000);
+    
+    return accounts.every(account => {
+      if (!account.last_updated) return false;
+      const lastUpdated = new Date(account.last_updated).getTime();
+      return lastUpdated > oneHourAgo;
+    });
+  };
+
+  // Helper to get sync status message
+  const getSyncStatusMessage = () => {
+    if (!accounts || !Array.isArray(accounts)) return 'No accounts found';
+    
+    const syncedCount = accounts.filter(account => {
+      if (!account.last_updated) return false;
+      const lastUpdated = new Date(account.last_updated).getTime();
+      const oneHourAgo = Date.now() - (60 * 60 * 1000);
+      return lastUpdated > oneHourAgo;
+    }).length;
+    
+    const totalCount = accounts.length;
+    
+    if (syncedCount === totalCount) {
+      return `✅ All ${totalCount} accounts synced`;
+    } else if (syncedCount > 0) {
+      return `⚠️ ${syncedCount}/${totalCount} accounts synced`;
+    } else {
+      return `❌ No accounts synced`;
+    }
+  };
+
+  // Helper to refresh account balances from Plaid
+  const refreshAccountBalances = async () => {
+    try {
+      console.log('🔄 Refreshing account balances from Plaid...');
+      setLastRefreshMessage('Refreshing account balances...');
+      
+      // Call the backend to refresh account balances from Plaid
+      const balanceResponse = await fetch(`${apiConfig.baseURL}/api/plaid/refresh_account_balances`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!balanceResponse.ok) {
+        if (balanceResponse.status === 404) {
+          console.log('⚠️ Account balance refresh endpoint not found, skipping balance refresh');
+          setLastRefreshMessage('Account balance refresh not available');
+          return true; // Don't treat this as an error
+        }
+        throw new Error(`HTTP ${balanceResponse.status}: Failed to refresh account balances`);
+      }
+      
+      const balanceResult = await balanceResponse.json();
+      console.log('📊 Account balance refresh result:', balanceResult);
+      
+      if (balanceResult.success) {
+        setLastRefreshMessage(`Account balances refreshed: ${balanceResult.accounts_updated || 0} updated`);
+      } else {
+        setLastRefreshMessage('Account balance refresh completed');
+      }
+      
+      return balanceResult.success;
+    } catch (error) {
+      console.error('❌ Error refreshing account balances:', error);
+      setLastRefreshMessage('Failed to refresh account balances');
+      return false;
+    }
+  };
+
   // Replace fetchAccounts and onRefresh to use refreshAccounts
   const fetchAccounts = refreshAccounts;
 
@@ -211,14 +331,74 @@ export default function App({ navigation }) {
     }
     
     try {
-      // Always refresh all accounts regardless of selected tab
+      // First, sync transactions from Plaid to get the latest data
+      console.log('🔄 Syncing transactions from Plaid...');
+      setLastRefreshMessage('Syncing transactions from Plaid...');
+      setSyncingTransactions(true);
+      
+      const syncResponse = await fetch(`${apiConfig.baseURL}/api/plaid/sync_transactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ force_full_fetch: false }) // Use incremental sync for faster refresh
+      });
+      
+      if (!syncResponse.ok) {
+        throw new Error(`HTTP ${syncResponse.status}: Failed to sync transactions`);
+      }
+      
+      const syncResult = await syncResponse.json();
+      console.log('📊 Plaid sync result:', syncResult);
+      
+      if (syncResult.success) {
+        const { added, modified, removed } = syncResult;
+        let syncMessage = '';
+        
+        if (added > 0 || modified > 0 || removed > 0) {
+          const changes = [];
+          if (added > 0) changes.push(`${added} new`);
+          if (modified > 0) changes.push(`${modified} updated`);
+          if (removed > 0) changes.push(`${removed} removed`);
+          syncMessage = `Synced ${changes.join(', ')} transaction${changes.length > 1 ? 's' : ''}`;
+        } else {
+          syncMessage = 'No new transactions found';
+        }
+        
+        setLastRefreshMessage(syncMessage);
+      } else {
+        setLastRefreshMessage('Transaction sync completed');
+      }
+      
+      // Wait a moment for backend to process the sync
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Now refresh account balances from Plaid to get updated balances
+      console.log('🔄 Refreshing account balances from Plaid...');
+      await refreshAccountBalances();
+      
+      // Wait a moment for backend to process balance updates
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Now refresh account metadata and balances
+      console.log('🔄 Starting global refresh of all accounts...');
       await refreshAccounts();
-      setLastRefreshMessage('Accounts refreshed successfully');
+      console.log('✅ Global refresh completed successfully');
+      
+      // Wait a moment to ensure backend has processed all updates
+      setTimeout(() => {
+        console.log('🔄 Performing final sync check...');
+        refreshAccounts().catch(error => {
+          console.error('❌ Final sync check failed:', error);
+        });
+      }, 2000);
+      
     } catch (error) {
-      console.error('Error refreshing accounts:', error);
+      console.error('❌ Error refreshing accounts:', error);
       setLastRefreshMessage('Error refreshing accounts');
     } finally {
       setRefreshing(false);
+      setSyncingTransactions(false);
       // After refresh is complete, wait a moment then hide the flag
       setTimeout(() => {
         setShowAllAccountsDuringRefresh(false);
@@ -368,6 +548,79 @@ export default function App({ navigation }) {
     setShowAllAccountsDuringRefresh(true); // Show all accounts during refresh
     await onRefresh();
   };
+  
+  const handleForceFullSync = async () => {
+    setMenuVisible(false);
+    setShowAllAccountsDuringRefresh(true);
+    
+    try {
+      setLastRefreshMessage('Force full sync in progress...');
+      setSyncingTransactions(true);
+      console.log('🔄 Starting force full sync from Plaid...');
+      
+      // Perform a full sync from Plaid (up to 24 months of data)
+      const syncResponse = await fetch(`${apiConfig.baseURL}/api/plaid/sync_transactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ force_full_fetch: true }) // Force full fetch
+      });
+      
+      if (!syncResponse.ok) {
+        throw new Error(`HTTP ${syncResponse.status}: Failed to force sync transactions`);
+      }
+      
+      const syncResult = await syncResponse.json();
+      console.log('📊 Force full sync result:', syncResult);
+      
+      if (syncResult.success) {
+        const { added, modified, removed } = syncResult;
+        let syncMessage = '';
+        
+        if (added > 0 || modified > 0 || removed > 0) {
+          const changes = [];
+          if (added > 0) changes.push(`${added} new`);
+          if (modified > 0) changes.push(`${modified} updated`);
+          if (removed > 0) changes.push(`${removed} removed`);
+          syncMessage = `Full sync: ${changes.join(', ')} transaction${changes.length > 1 ? 's' : ''}`;
+        } else {
+          syncMessage = 'Full sync completed - no changes found';
+        }
+        
+        setLastRefreshMessage(syncMessage);
+      }
+      
+      // Wait for backend to process, then refresh accounts
+      setTimeout(async () => {
+        try {
+          // First refresh account balances from Plaid
+          console.log('🔄 Refreshing account balances after full sync...');
+          await refreshAccountBalances();
+          
+          // Wait for balance updates to process
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Then refresh account metadata
+          await refreshAccounts();
+          setLastRefreshMessage('Full sync completed successfully');
+        } catch (error) {
+          console.error('❌ Error refreshing accounts after full sync:', error);
+          setLastRefreshMessage('Full sync completed but failed to refresh accounts');
+        }
+      }, 2000);
+      
+    } catch (error) {
+      console.error('❌ Error during force full sync:', error);
+      setLastRefreshMessage('Force full sync failed');
+    } finally {
+      setSyncingTransactions(false);
+      setTimeout(() => {
+        setShowAllAccountsDuringRefresh(false);
+      }, 1000);
+    }
+  };
+  
   const handleViewInstitutionSettings = () => {
     setMenuVisible(false);
     // Navigation or logic for institution settings can go here
@@ -417,8 +670,21 @@ export default function App({ navigation }) {
             console.log('🔄 Exchanging public token...');
             await plaidService.exchangePublicToken(result.publicToken);
             console.log('✅ Public token exchanged successfully');
-            await refreshAccounts();
-            console.log('✅ Accounts refreshed');
+            
+            // Wait for backend to process the new connection
+            setLastRefreshMessage('Processing bank connection...');
+            setTimeout(async () => {
+              try {
+                console.log('🔄 Refreshing accounts after new connection...');
+                await refreshAccounts();
+                console.log('✅ Accounts refreshed after new connection');
+                setLastRefreshMessage('Bank connected and accounts synced successfully');
+              } catch (error) {
+                console.error('❌ Error refreshing accounts after connection:', error);
+                setLastRefreshMessage('Bank connected but failed to sync accounts');
+              }
+            }, 2000);
+            
           } catch (error) {
             console.error('❌ Error exchanging public token:', error);
             setLastRefreshMessage('Error connecting to bank');
@@ -540,8 +806,21 @@ export default function App({ navigation }) {
             console.log('🔄 Exchanging public token...');
             await plaidService.exchangePublicToken(result.publicToken);
             console.log('✅ Public token exchanged successfully');
-            await refreshAccounts();
-            console.log('✅ Accounts refreshed');
+            
+            // Wait for backend to process the reconnection
+            setLastRefreshMessage('Processing bank reconnection...');
+            setTimeout(async () => {
+              try {
+                console.log('🔄 Refreshing accounts after reconnection...');
+                await refreshAccounts();
+                console.log('✅ Accounts refreshed after reconnection');
+                setLastRefreshMessage('Bank reconnected and accounts synced successfully');
+              } catch (error) {
+                console.error('❌ Error refreshing accounts after reconnection:', error);
+                setLastRefreshMessage('Bank reconnected but failed to sync accounts');
+              }
+            }, 2000);
+            
           } catch (error) {
             console.error('❌ Error exchanging public token:', error);
             setLastRefreshMessage('Error reconnecting to bank');
@@ -594,6 +873,9 @@ export default function App({ navigation }) {
             <TouchableOpacity style={styles.menuItem} onPress={handleRefreshAll}>
               <Text style={styles.menuItemText}>Refresh all</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={handleForceFullSync}>
+              <Text style={styles.menuItemText}>Force full sync</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={handleViewInstitutionSettings}>
               <Text style={styles.menuItemText}>View institution settings</Text>
             </TouchableOpacity>
@@ -633,6 +915,42 @@ export default function App({ navigation }) {
           <Text style={styles.refreshMessageText}>{lastRefreshMessage}</Text>
         </View>
       ) : null}
+
+      {/* Sync Status Display */}
+      {accounts && Array.isArray(accounts) && accounts.length > 0 && (
+        <View style={[
+          styles.syncStatusContainer,
+          areAccountsSynced() ? styles.syncStatusSynced : styles.syncStatusUnsynced
+        ]}>
+          <Text style={[
+            styles.syncStatusText,
+            areAccountsSynced() ? styles.syncStatusTextSynced : styles.syncStatusTextUnsynced
+          ]}>
+            {syncingTransactions ? '🔄 Syncing transactions from Plaid...' : getSyncStatusMessage()}
+          </Text>
+          <TouchableOpacity 
+            style={styles.manualSyncButton}
+            onPress={async () => {
+              try {
+                setSyncingTransactions(true);
+                setLastRefreshMessage('Manual sync in progress...');
+                await refreshAccounts();
+                setLastRefreshMessage('Manual sync completed');
+              } catch (error) {
+                console.error('❌ Manual sync failed:', error);
+                setLastRefreshMessage('Manual sync failed');
+              } finally {
+                setSyncingTransactions(false);
+              }
+            }}
+            disabled={syncingTransactions}
+          >
+            <Text style={styles.manualSyncButtonText}>
+              {syncingTransactions ? '⏳ Syncing...' : '🔄 Sync Now'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Show message when displaying all accounts during refresh */}
       {showAllAccountsDuringRefresh && (
@@ -790,14 +1108,82 @@ export default function App({ navigation }) {
                               setRefreshingAccounts(prev => new Set(prev).add(account.id));
                               setLastRefreshMessage('Refreshing account...');
                               
-                              // Update the account's last_updated immediately in local state
-                              const updatedAccounts = accounts.map(acc => 
-                                acc.id === account.id 
-                                  ? { ...acc, last_updated: new Date().toISOString() }
-                                  : acc
-                              );
-                              setAccounts(updatedAccounts);
+                              // First, sync transactions from Plaid for this account
+                              if (account.plaid_item?.item_id) {
+                                console.log('🔄 Syncing transactions from Plaid for account:', account.name);
+                                setLastRefreshMessage('Syncing transactions from Plaid...');
+                                setSyncingTransactions(true);
+                                
+                                try {
+                                  const syncResponse = await fetch(`${apiConfig.baseURL}/api/plaid/fetch_transactions_for_item`, {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({ 
+                                      item_id: account.plaid_item.item_id 
+                                    })
+                                  });
+                                  
+                                  if (syncResponse.ok) {
+                                    const syncResult = await syncResponse.json();
+                                    console.log('📊 Account transaction sync result:', syncResult);
+                                    
+                                    if (syncResult.success) {
+                                      const { transactions_saved, transactions_filtered } = syncResult.results;
+                                      setLastRefreshMessage(`Synced ${transactions_saved} transactions`);
+                                    }
+                                  }
+                                } catch (syncError) {
+                                  console.error('❌ Error syncing transactions for account:', syncError);
+                                  // Continue with account refresh even if transaction sync fails
+                                } finally {
+                                  setSyncingTransactions(false);
+                                }
+                                
+                                // Wait a moment for backend to process the sync
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                              }
                               
+                              // Now refresh account balances from Plaid for this account
+                              if (account.plaid_item?.item_id) {
+                                console.log('🔄 Refreshing account balances from Plaid for account:', account.name);
+                                setLastRefreshMessage('Refreshing account balances...');
+                                
+                                try {
+                                  const balanceResponse = await fetch(`${apiConfig.baseURL}/api/plaid/refresh_account_balances`, {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({ 
+                                      item_id: account.plaid_item.item_id 
+                                    })
+                                  });
+                                  
+                                  if (balanceResponse.ok) {
+                                    const balanceResult = await balanceResponse.json();
+                                    console.log('📊 Account balance refresh result:', balanceResult);
+                                    
+                                    if (balanceResult.success) {
+                                      setLastRefreshMessage(`Account balances refreshed: ${balanceResult.accounts_updated || 0} updated`);
+                                    }
+                                  } else if (balanceResponse.status === 404) {
+                                    console.log('⚠️ Account balance refresh endpoint not found, skipping balance refresh');
+                                    setLastRefreshMessage('Account balance refresh not available');
+                                  } else {
+                                    console.error('❌ HTTP error during balance refresh:', balanceResponse.status);
+                                  }
+                                } catch (balanceError) {
+                                  console.error('❌ Error refreshing account balances:', balanceError);
+                                  // Continue with account refresh even if balance refresh fails
+                                }
+                                
+                                // Wait a moment for backend to process balance updates
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                              }
+                              
+                              // Now refresh the individual account
                               const refreshUrl = `${apiConfig.baseURL}/api/accounts/${account.id}/refresh`;
                               console.log('🌐 Calling refresh endpoint:', refreshUrl);
                               
@@ -821,12 +1207,20 @@ export default function App({ navigation }) {
                               
                               if (result.success) {
                                 setLastRefreshMessage(`✅ ${result.message}`);
-                                // Refresh all accounts to show updated data
-                                await refreshAccounts();
+                                
+                                // Wait a moment for backend to process, then refresh all accounts
+                                setTimeout(async () => {
+                                  try {
+                                    console.log('🔄 Refreshing all accounts after individual refresh...');
+                                    await refreshAccounts();
+                                    console.log('✅ All accounts refreshed successfully');
+                                  } catch (error) {
+                                    console.error('❌ Error refreshing all accounts:', error);
+                                    setLastRefreshMessage('Account refreshed but failed to sync with other accounts');
+                                  }
+                                }, 1000);
                               } else {
                                 setLastRefreshMessage(`❌ Error: ${result.error}`);
-                                // Revert the local state change if refresh failed
-                                setAccounts(accounts);
                               }
                             } catch (error) {
                               console.error('❌ Error refreshing account:', error);
@@ -874,9 +1268,6 @@ export default function App({ navigation }) {
                               }
                               
                               setLastRefreshMessage(`❌ ${errorMessage}`);
-                              
-                              // Revert the local state change if refresh failed
-                              setAccounts(accounts);
                             } finally {
                               // Remove account from refreshing set
                               setRefreshingAccounts(prev => {
@@ -1214,6 +1605,49 @@ const styles = StyleSheet.create({
   reconnectButtonText: {
     color: '#fff',
     fontSize: 12,
+    fontWeight: 'bold',
+  },
+  syncStatusContainer: {
+    backgroundColor: '#F3F3F3',
+    padding: 10,
+    alignItems: 'center',
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  syncStatusSynced: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#A5D6A7',
+    borderWidth: 1,
+  },
+  syncStatusUnsynced: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#EF5350',
+    borderWidth: 1,
+  },
+  syncStatusText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#222',
+  },
+  syncStatusTextSynced: {
+    color: '#2E7D32',
+  },
+  syncStatusTextUnsynced: {
+    color: '#D32F2F',
+  },
+  manualSyncButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  manualSyncButtonText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: 'bold',
   },
 });

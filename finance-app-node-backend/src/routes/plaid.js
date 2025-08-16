@@ -1669,6 +1669,184 @@ router.post('/create_update_link_token', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /plaid/refresh_account_balances:
+ *   post:
+ *     summary: Refresh account balances from Plaid
+ *     description: Fetches the latest account balances from Plaid for all accounts or a specific item
+ *     tags: [Plaid]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               item_id:
+ *                 type: string
+ *                 description: Optional - specific Plaid item ID to refresh balances for. If not provided, refreshes all items.
+ *     responses:
+ *       200:
+ *         description: Account balances refreshed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 accounts_updated:
+ *                   type: integer
+ *                   description: Number of accounts that were updated
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post('/refresh_account_balances', async (req, res) => {
+  try {
+    const { item_id } = req.body;
+    
+    console.log('🔄 Refreshing account balances from Plaid...');
+    if (item_id) {
+      console.log(`📊 Refreshing balances for specific item: ${item_id}`);
+    } else {
+      console.log('📊 Refreshing balances for all Plaid items');
+    }
+    
+    // Import required models
+    const { Account } = require('../models');
+    
+    // Get Plaid items to refresh
+    let plaidItems;
+    if (item_id) {
+      // Refresh specific item
+      const plaidItem = await PlaidItem.findOne({
+        where: { item_id: item_id }
+      });
+      
+      if (!plaidItem) {
+        return res.status(404).json({
+          success: false,
+          error: 'Plaid item not found'
+        });
+      }
+      
+      plaidItems = [plaidItem];
+    } else {
+      // Refresh all items
+      plaidItems = await PlaidItem.findAll();
+    }
+    
+    let totalAccountsUpdated = 0;
+    
+    for (const item of plaidItems) {
+      try {
+        console.log(`🔄 Refreshing balances for ${item.institution_name} (${item.item_id})`);
+        
+        // Get accounts for this item from Plaid
+        const accountsResponse = await plaidClient.accountsGet({
+          access_token: item.access_token
+        });
+        
+        const plaidAccounts = accountsResponse.data.accounts;
+        console.log(`📊 Found ${plaidAccounts.length} accounts for ${item.institution_name}`);
+        
+        // Update each account's balance
+        for (const plaidAccount of plaidAccounts) {
+          try {
+            const [account, created] = await Account.findOrCreate({
+              where: { account_id: plaidAccount.account_id },
+              defaults: {
+                account_id: plaidAccount.account_id,
+                name: plaidAccount.name,
+                official_name: plaidAccount.official_name,
+                type: plaidAccount.type,
+                subtype: plaidAccount.subtype,
+                mask: plaidAccount.mask,
+                available_balance: plaidAccount.balances.available,
+                current_balance: plaidAccount.balances.current,
+                iso_currency_code: plaidAccount.balances.iso_currency_code,
+                plaid_item_id: item.id,
+                last_updated: new Date()
+              }
+            });
+            
+            if (!created) {
+              // Update existing account with new balances
+              await account.update({
+                available_balance: plaidAccount.balances.available,
+                current_balance: plaidAccount.balances.current,
+                iso_currency_code: plaidAccount.balances.iso_currency_code,
+                last_updated: new Date()
+              });
+              console.log(`✅ Updated balance for ${account.name}: $${plaidAccount.balances.current}`);
+            } else {
+              console.log(`✅ Created new account: ${account.name} with balance $${plaidAccount.balances.current}`);
+            }
+            
+            totalAccountsUpdated++;
+            
+          } catch (accountError) {
+            console.error(`❌ Error updating account ${plaidAccount.account_id}:`, accountError);
+          }
+        }
+        
+        // Update the Plaid item's last refresh time
+        await item.update({ 
+          last_refresh: new Date(),
+          status: null, // Reset any error status
+          needs_update: false // Reset needs_update flag
+        });
+        
+        console.log(`✅ Successfully refreshed balances for ${item.institution_name}`);
+        
+      } catch (itemError) {
+        console.error(`❌ Error refreshing balances for item ${item.item_id}:`, itemError);
+        
+        // Check if this is a Plaid-specific error that requires reconnection
+        if (itemError.response?.data) {
+          const plaidError = itemError.response.data;
+          
+          if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED' || 
+              plaidError.error_code === 'INVALID_ACCESS_TOKEN' ||
+              plaidError.error_code === 'ITEM_ERROR') {
+            
+            console.log(`⚠️ Marking item ${item.item_id} as needing update due to: ${plaidError.error_code}`);
+            
+            await item.update({
+              status: plaidError.error_code,
+              needs_update: true,
+              last_refresh: new Date()
+            });
+          }
+        }
+      }
+    }
+    
+    console.log(`✅ Account balance refresh completed. Updated ${totalAccountsUpdated} accounts.`);
+    
+    res.json({
+      success: true,
+      message: `Successfully refreshed account balances`,
+      accounts_updated: totalAccountsUpdated
+    });
+    
+  } catch (error) {
+    console.error('❌ Error refreshing account balances:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to refresh account balances',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;
 module.exports.updateTransactionFilterConfig = updateTransactionFilterConfig;
 module.exports.TRANSACTION_FILTER_CONFIG = TRANSACTION_FILTER_CONFIG; 

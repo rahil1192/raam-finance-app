@@ -97,7 +97,7 @@ export default function CategoriesTab({ transactions: propTransactions, selected
       console.log('🌐 Base URL:', apiConfig.baseURL);
       
       const response = await transactionService.getTransactions();
-      console.log('📦 Category data response:', response);
+      // console.log('📦 Category data response:', response);
       
       // Validate response data
       if (!response || !Array.isArray(response)) {
